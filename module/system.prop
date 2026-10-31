@@ -1,0 +1,12 @@
+# LHDC A2DP Codec Support & Priority
+vendor.bluetooth.lhdc_codec.supported=true
+persist.bluetooth.lhdc_codec.enabled=true
+persist.bluetooth.a2dp.lhdc.whitelist=false
+persist.vendor.bt.a2dp.lhdc=true
+ro.vendor.bt.a2dp.lhdc=true
+persist.vendor.bluetooth.lhdc_abr=true
+vendor.bluetooth.lhdc.abr=true
+bluetooth.a2dp.source.lhdcv2_priority.config=8001
+bluetooth.a2dp.source.lhdcv3_priority.config=8002
+bluetooth.a2dp.source.lhdcv5_priority.config=8003
+persist.bluetooth.a2dp_offload.disabled=false
