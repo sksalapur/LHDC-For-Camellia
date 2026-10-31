@@ -10,29 +10,13 @@ PROJECT_DIR="/mnt/e/DATA/Projects/LHDC"
 WORKDIR="$HOME/voltage"
 OUT_DEST="$PROJECT_DIR/voltage_build/out"
 
-echo "=== Step 1: Installing Required Dependencies ==="
-sudo apt update
-sudo apt install -y \
-    bc bison build-essential ccache curl flex g++-multilib gcc-multilib git \
-    git-lfs gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev \
-    liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 \
-    libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip \
-    zlib1g-dev python3 python-is-python3 openjdk-21-jdk libtinfo5
-
-# Configure Git if not configured
-git config --global user.name "SKSAL" 2>/dev/null || true
-git config --global user.email "sksal@local" 2>/dev/null || true
-
-# Setup repo tool
-mkdir -p "$HOME/bin"
-curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$HOME/bin/repo"
-chmod a+x "$HOME/bin/repo"
-export PATH="$HOME/bin:$PATH"
+echo "=== Step 1: Environment Check ==="
+export PATH="$HOME/bin:/usr/local/bin:$PATH"
 
 # Setup ccache
 export USE_CCACHE=1
 export CCACHE_EXEC=/usr/bin/ccache
-ccache -M 50G
+ccache -M 50G 2>/dev/null || true
 
 mkdir -p "$WORKDIR"
 mkdir -p "$OUT_DEST"
@@ -75,6 +59,21 @@ if [ -d "frameworks/base" ]; then
     cd frameworks/base
     git apply "$PATCH_DIR/0_frameworks_base.patch" 2>/dev/null || git apply --whitespace=fix "$PATCH_DIR/0_frameworks_base.patch" 2>/dev/null || echo "frameworks/base patch already applied or skipped"
     cd "$WORKDIR"
+# Setup VoltageOS product makefile for camellia
+if [ -d "device/xiaomi/camellia" ]; then
+    if [ ! -f "device/xiaomi/camellia/voltage_camellia.mk" ]; then
+        echo "Creating voltage_camellia.mk..."
+        cat << 'EOF' > device/xiaomi/camellia/voltage_camellia.mk
+$(call inherit-product, device/xiaomi/camellia/lineage_camellia.mk)
+$(call inherit-product, vendor/voltage/config/common_full_phone.mk)
+PRODUCT_NAME := voltage_camellia
+EOF
+    fi
+    if ! grep -q "voltage_camellia" device/xiaomi/camellia/AndroidProducts.mk; then
+        echo "Adding voltage_camellia to AndroidProducts.mk..."
+        sed -i 's/lineage_camellia.mk/lineage_camellia.mk \\\n    \$(LOCAL_DIR)\/voltage_camellia.mk/' device/xiaomi/camellia/AndroidProducts.mk
+        echo -e "COMMON_LUNCH_CHOICES += voltage_camellia-userdebug\n" >> device/xiaomi/camellia/AndroidProducts.mk
+    fi
 fi
 
 echo "=== Step 6: Starting Compilation ==="
