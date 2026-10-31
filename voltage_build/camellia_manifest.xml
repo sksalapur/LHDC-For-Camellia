@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+    <!-- Device Tree for Redmi Note 10 5G / camellia -->
+    <project name="AlphaDroid-devices/device_xiaomi_camellia" path="device/xiaomi/camellia" remote="github" revision="fourteen" />
+
+    <!-- Vendor Tree for camellia -->
+    <project name="ProjectElixir-Devices/android_vendor_xiaomi_camellia" path="vendor/xiaomi/camellia" remote="github" revision="fourteen" />
+
+    <!-- Kernel Tree / Prebuilt Kernel for camellia -->
+    <project name="AlphaDroid-devices/device_xiaomi_camellia-kernel" path="device/xiaomi/camellia-kernel" remote="github" revision="fourteen" />
+
+    <!-- Hardware / MediaTek interfaces if required -->
+    <project name="LineageOS/android_hardware_mediatek" path="hardware/mediatek" remote="github" revision="lineage-21.0" />
+</manifest>

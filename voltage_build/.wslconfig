@@ -1,0 +1,7 @@
+[wsl2]
+# Allocate 12 GB RAM to WSL2 (leaves 4 GB for Windows host)
+memory=12GB
+# Allocate 16 GB of swap space on disk to prevent out-of-memory during linking
+swap=16GB
+# Use all 16 logical cores
+processors=16
