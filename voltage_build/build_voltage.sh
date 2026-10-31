@@ -59,16 +59,37 @@ if [ -d "frameworks/base" ]; then
     cd frameworks/base
     git apply "$PATCH_DIR/0_frameworks_base.patch" 2>/dev/null || git apply --whitespace=fix "$PATCH_DIR/0_frameworks_base.patch" 2>/dev/null || echo "frameworks/base patch already applied or skipped"
     cd "$WORKDIR"
-# Setup VoltageOS product makefile for camellia
+fi
+
+# Inject 64-bit LHDC vendor libraries into the build
+echo "Injecting native LHDC libraries into vendor/xiaomi/camellia..."
+mkdir -p vendor/xiaomi/camellia/proprietary/system/lib64
+cp -f "$PROJECT_DIR/module/system/lib64/"*.so vendor/xiaomi/camellia/proprietary/system/lib64/
+
+# Setup VoltageOS product makefile for camellia with baked-in LHDC
 if [ -d "device/xiaomi/camellia" ]; then
-    if [ ! -f "device/xiaomi/camellia/voltage_camellia.mk" ]; then
-        echo "Creating voltage_camellia.mk..."
-        cat << 'EOF' > device/xiaomi/camellia/voltage_camellia.mk
+    echo "Configuring voltage_camellia.mk with native LHDC..."
+    cat << 'EOF' > device/xiaomi/camellia/voltage_camellia.mk
 $(call inherit-product, device/xiaomi/camellia/lineage_camellia.mk)
 $(call inherit-product, vendor/voltage/config/common_full_phone.mk)
+
 PRODUCT_NAME := voltage_camellia
+
+# Baked-in LHDC Native Audio Support
+PRODUCT_COPY_FILES += \
+    vendor/xiaomi/camellia/proprietary/system/lib64/liblhdc.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/liblhdc.so \
+    vendor/xiaomi/camellia/proprietary/system/lib64/liblhdcv5.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/liblhdcv5.so \
+    vendor/xiaomi/camellia/proprietary/system/lib64/liblhdcBT_enc.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/liblhdcBT_enc.so \
+    vendor/xiaomi/camellia/proprietary/system/lib64/liblhdcv5BT_enc.so:$(TARGET_COPY_OUT_SYSTEM)/lib64/liblhdcv5BT_enc.so
+
+PRODUCT_PROPERTY_OVERRIDES += \
+    persist.bluetooth.lhdc_codec.enabled=true \
+    vendor.bluetooth.lhdc_codec.supported=true \
+    bluetooth.a2dp.source.lhdcv3_priority.config=8002 \
+    bluetooth.a2dp.source.lhdcv2_priority.config=8001 \
+    persist.bluetooth.a2dp_offload.disabled=true
 EOF
-    fi
+
     if ! grep -q "voltage_camellia" device/xiaomi/camellia/AndroidProducts.mk; then
         echo "Adding voltage_camellia to AndroidProducts.mk..."
         sed -i 's/lineage_camellia.mk/lineage_camellia.mk \\\n    \$(LOCAL_DIR)\/voltage_camellia.mk/' device/xiaomi/camellia/AndroidProducts.mk
