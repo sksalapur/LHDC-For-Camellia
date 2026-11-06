@@ -31,24 +31,15 @@ ui*.xml
 *.dex
 __pycache__/
 
-# Scratch reverse engineering & inspection scripts
-check_*.py
-disas_*.py
-disasm_*.py
-find_*.py
-inspect_*.py
-decode_*.py
-print_*.py
-search_*.py
-test_get_codec.py
-patch_jni_v[0-7].py
-deploy_patched.sh
-inject_mount.sh
-setup_apex.sh
-AospBluetoothResOverlay_patched.apk
-miui_libbluetooth_jni*.so
-
-# Scratch test files and binaries in repository root
+# Scratch scripts, inspection tools, and test suites
+/check_*.py
+/disas_*.py
+/disasm_*.py
+/find_*.py
+/inspect_*.py
+/decode_*.py
+/print_*.py
+/search_*.py
 /test_*
 test_feed*
 test_96k*
@@ -60,6 +51,26 @@ patch_parse*
 flag.*
 vdex_test
 
+# Intermediate helper and build scripts
+/deploy_*.sh
+/update_miuibt.sh
+/inject_mount.sh
+/setup_apex.sh
+/patch_jni_v[0-7].py
+/liblhdcBT_enc_shim.so
+/parse_elf_symbols.py
+/parse_snoop.py
+
+# Unneeded reference and ROM trees
+/derp_patches/
+/evox_liblhdc/
+/ExtA2DP/
+/lhdc_universal/
+/spr_liblhdc/
+/src/
+/voltage_build/
+/scratch/
+
 # Scratch databases and backups
 *.db
 *.db-shm
@@ -67,18 +78,10 @@ vdex_test
 *.backup
 *.bak
 
-# Unneeded raw APKs and JARs in root
-/Bluetooth*.apk
-/MiuiBluetooth*.apk
-/miui_*.apk
-/timbre.apk
-/bitchord_installed.apk
-/bypass*.apk
-/manager.apk
-/ogesture*.apk
-/xgesture*.apk
-/WooBox*.apk
-/AnyLauncher*.apk
+# Unneeded raw APKs, SOs, and JARs in root
+/*.apk
+/*.so
+/*.jar
 /*.zip
 !/lhdc_camellia_enabler.zip
 /*.jar

@@ -18,7 +18,6 @@ This project delivers:
 2. **Native Bluetooth JNI SCMS-T DRM Bypass (`patch_jni_v8.py`)**: Neutralizes Xiaomi's proprietary Content Protection check in `FindPeerSink`.
 3. **MIUI Bluetooth Framework Smali Patcher (`patch_dex_u0.py`)**: Removes the Xiaomi-only device whitelist and fixes a Dalvik sign-extension bug that prevented automated codec restoration when earbuds connect from their charging case.
 4. **Ready-to-Flash Module (`lhdc_camellia_enabler.zip`)**: A comprehensive APatch / Magisk / KernelSU module that cleanly bind-mounts patched system files, APEX libraries, and properties.
-5. **AOSP / Custom ROM Build Kit (`voltage_build/`)**: Complete scripts and manifest to compile VoltageOS 16 (Android 16) with native LHDC support baked directly into the ROM.
 
 ---
 
@@ -124,22 +123,11 @@ LHDC-For-Camellia/
 │   ├── post-fs-data.sh                   # Early boot mount setup
 │   ├── service.sh                        # Late boot mounts & resetprop injection
 │   └── system.prop                       # Prop defaults (persist.bluetooth.lhdc_codec.enabled)
-├── spr_liblhdc/                          # Savitech LHDC V5 source & header reference
-├── voltage_build/                        # Automated VoltageOS 16 ROM build kit
-│   ├── .wslconfig                        # Recommended WSL2 memory & swap config
-│   ├── README_BUILD_GUIDE.md             # Complete step-by-step ROM compilation guide
-│   ├── build_voltage.sh                  # Automated sync, patch, and build script
-│   └── camellia_manifest.xml             # Local manifest for camellia device trees
-├── derp_patches/                         # AOSP patch collection for custom ROM compilation
-├── evox_liblhdc/                         # EvolutionX LHDC library Android.bp definitions
-├── lhdc_universal/                       # Universal LHDC module reference
 ├── lhdc_shim.c                           # Source for liblhdcBT_enc.so translation shim
-├── liblhdcBT_enc_shim.so                 # Compiled 64-bit shim binary (ARM64-v8a)
-├── package_zip.py                        # Python utility to build flashable zip
+├── package_zip.py                        # Python utility to build flashable module zip
 ├── patch_dex_u0.py                       # Bytecode patcher for MiuiBluetooth.apk
 ├── patch_jni_v8.py                       # Binary patcher for libbluetooth_jni.so
 ├── rebuild_miui_bt_apk.py                # Zipalign & repackager for system APKs
-├── update_miuibt.sh                      # Hot-deploy helper for MiuiBluetooth.apk
 ├── lhdc_camellia_enabler.zip             # Ready-to-flash APatch/Magisk module archive
 ├── LHDC_CAMELLIA_MASTER_DOCUMENTATION.md # Exhaustive master engineering documentation
 ├── README.md                             # Project overview & documentation
