@@ -99,10 +99,11 @@ static bool init_v5_lib(void) {
 // Global settings
 static uint32_t g_sample_rate = 48000;
 static uint32_t g_bits = 24;
-static uint32_t g_mtu = 500;
+static uint32_t g_mtu = 600;
 static uint32_t g_block_size = 240;
 static uint32_t g_bytes_per_frame = 1440;
-static uint32_t s_current_bitrate_idx = 6;
+static uint32_t s_target_high_bitrate = 7; // Default 900 kbps (HIGH)
+static uint32_t s_current_bitrate_idx = 7;
 static uint32_t s_clean_queue_count = 0;
 
 __attribute__((visibility("default")))
@@ -130,16 +131,22 @@ static uint32_t map_bitrate_to_v5(int bitrate_inx) {
     // V5 bitrate indexes:
     // 5 = 400 kbps (LOW)
     // 6 = 500 kbps (MID)
-    // On a 2Mbps EDR link (Support 3Mbps: false), 500 kbps is the optimal high-fidelity ceiling.
-    // Higher rates (900k/1000k) saturate the 2-DH5 link and cause buffer overflow / packet drops.
-    if (bitrate_inx == 0 || bitrate_inx == 5) return 5;
-    return 6;
+    // 7 = 900 kbps (HIGH)
+    // 8 = 1000 kbps (HIGH1)
+    // At MTU 600:
+    // Rate 8 (1000k) frame size is 626 bytes (> 600 -> dropped to 0 bytes / buffer underrun clicks).
+    // Therefore, index 8 is safely down-tuned to 7 (900k), where frame size is 564 bytes (< 600).
+    // Rate 7 (900k) frame size is 564 bytes (< 600, 2*564 > 600 -> exactly 1 frame per packet, zero batching).
+    // Rate 6 (500k) frame size is 314 bytes (< 600, 2*314 > 600 -> exactly 1 frame per packet, zero batching).
+    if (bitrate_inx == 1 || bitrate_inx == 6) return 6;
+    if (bitrate_inx == 0 || bitrate_inx == 5) return 6; // map low to 500k to avoid 400k batching
+    return 7; // Default 900 kbps (safely down-tuned from 1000k / index 8)
 }
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_get_bitrate(HANDLE_LHDC_BT handle) {
-    if (!handle || !init_v5_lib()) return (s_current_bitrate_idx == 5) ? 400 : 500;
-    uint32_t br = 500000;
+    if (!handle || !init_v5_lib()) return (s_current_bitrate_idx == 6) ? 500 : 900;
+    uint32_t br = 900000;
     if (fn_lhdcv5BT_get_bitrate) {
         fn_lhdcv5BT_get_bitrate((HANDLE_LHDCV5_BT)handle, &br);
     }
@@ -152,6 +159,7 @@ int32_t lhdcBT_set_bitrate(HANDLE_LHDC_BT handle, int bitrate_inx) {
     if (!handle || !init_v5_lib()) return -1;
 
     uint32_t target_br = map_bitrate_to_v5(bitrate_inx);
+    s_target_high_bitrate = target_br;
     s_current_bitrate_idx = target_br;
 
     if (fn_lhdcv5BT_set_max_bitrate) {
@@ -168,6 +176,7 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
     if (!handle || !init_v5_lib()) return -1;
 
     uint32_t target_br = map_bitrate_to_v5((int)max_bitrate_inx);
+    s_target_high_bitrate = target_br;
     s_current_bitrate_idx = target_br;
 
     if (fn_lhdcv5BT_set_max_bitrate) {
@@ -181,26 +190,27 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
     // Dynamic queue congestion management:
-    // If Bluetooth controller queue builds up, immediately downscale to 400 kbps (index 5)
-    // to rapidly drain the buffer and prevent audio dropouts/cutouts.
+    // If Bluetooth controller queue builds up (len > 2), immediately downscale to 500 kbps (index 6).
+    // At MTU 600, 500 kbps outputs 314 bytes per frame (1 frame per packet, NO batching),
+    // cutting bandwidth in half to rapidly drain the MTK buffer and prevent audio cutouts / dropouts.
     if (queueLen > 2) {
-        if (s_current_bitrate_idx != 5) {
-            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u) -> downscaling to 400 kbps", queueLen);
-            s_current_bitrate_idx = 5;
+        if (s_current_bitrate_idx != 6) {
+            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u) -> downscaling to 500 kbps", queueLen);
+            s_current_bitrate_idx = 6;
             if (fn_lhdcv5BT_set_bitrate) {
-                fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 5);
+                fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
             }
         }
         s_clean_queue_count = 0;
     } else if (queueLen == 0) {
         s_clean_queue_count++;
         // If queue has stayed completely clear for 100 consecutive frames (~500 ms),
-        // restore 500 kbps (index 6) for optimal high-res quality.
-        if (s_clean_queue_count >= 100 && s_current_bitrate_idx != 6) {
-            LOGI("lhdcBT_adjust_bitrate: queue cleared -> recovering to 500 kbps");
-            s_current_bitrate_idx = 6;
+        // restore target high bitrate (index 7 = 900 kbps) for optimal high-res quality.
+        if (s_clean_queue_count >= 100 && s_current_bitrate_idx != s_target_high_bitrate) {
+            LOGI("lhdcBT_adjust_bitrate: queue cleared -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
+            s_current_bitrate_idx = s_target_high_bitrate;
             if (fn_lhdcv5BT_set_bitrate) {
-                fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
+                fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
             }
             s_clean_queue_count = 0;
         }
@@ -213,7 +223,7 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
                             uint32_t bitrate_inx, uint32_t arg4, uint32_t arg5,
                             uint32_t arg6, uint32_t arg7) {
     uint32_t mtu = 660;
-    uint32_t interval = 10;
+    uint32_t interval = 20;
 
     if (arg6 >= 300) {
         // 8-argument signature: arg4=dualChannel, arg5=need_padding, arg6=mtu, arg7=interval
@@ -241,19 +251,21 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
     g_sample_rate = sample_rate;
     g_bits = bits_per_sample;
     
-    // Critical: Clamp encoder MTU to 500 bytes.
-    // At 500 kbps (314 bytes/frame) and 400 kbps (252 bytes/frame), two frames (628/504 bytes)
-    // exceed 500 bytes. This prevents liblhdcv5 from batching 2 subframes into 1 packet,
-    // ensuring EVERY single call returns exactly 1 frame (written > 0).
-    // This permanently eliminates receiver buffer starvation clicks/pops.
-    g_mtu = 500;
+    // Critical: Clamp encoder MTU to 600 bytes.
+    // At 600 bytes MTU:
+    // - 900 kbps produces 564 bytes/frame. 2 * 564 = 1128 > 600 -> exactly 1 frame per packet.
+    // - 500 kbps produces 314 bytes/frame. 2 * 314 = 628 > 600 -> exactly 1 frame per packet.
+    // Neither rate batches subframes into packets! 100% of calls produce written > 0 (1 frame).
+    // This permanently prevents receiver buffer starvation and eliminates diaphragm plastic movement noise.
+    g_mtu = 600;
 
     uint32_t v5_br = map_bitrate_to_v5((int)bitrate_inx);
+    s_target_high_bitrate = v5_br;
     s_current_bitrate_idx = v5_br;
     s_clean_queue_count = 0;
 
-    uint32_t v5_interval = 10;
-    if (interval == 20) v5_interval = 20;
+    uint32_t v5_interval = 20;
+    if (interval == 10) v5_interval = 10;
 
     int32_t ret = fn_lhdcv5BT_init_encoder((HANDLE_LHDCV5_BT)handle, sample_rate, bits_per_sample, v5_br, g_mtu, v5_interval, 0);
     LOGI("lhdcv5BT_init_encoder returned %d (v5_br=%u, mtu=%u, interval=%u)", ret, v5_br, g_mtu, v5_interval);
