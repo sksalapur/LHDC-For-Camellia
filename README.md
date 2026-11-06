@@ -202,5 +202,5 @@ Copy the compiled library to:
 - **Savitech Corp.** for the LHDC compression technology.
 - **MIUI / Xiaomi** for the base firmware binaries.
 - **AOSP & VoltageOS Teams** for the open-source Bluetooth stack.
-- Reverse engineering, binary patches, translation shim, and packaging developed by **SKSAL**.
+- Reverse engineering, binary patches, translation shim, and packaging developed by **SKSALAPUR**.
 
