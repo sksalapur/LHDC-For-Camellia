@@ -51,7 +51,16 @@ assert d[0x22841c:0x228420] == bytes.fromhex('33b30d00')
 d[0x22841c:0x228420] = bytes.fromhex('00000000')
 print("4. Patched U0 to NOP isOptionalCodecsEnabled branch")
 
-# 5. Recalculate Checksums
+# 5. Patch n.onReceive delay at 0x2259a8
+# In orig:
+# 2259a8: 1607 e803 const-wide/16 v7, 1000
+# Replace with 3000ms (0x0bb8):
+# 2259a8: 1607 b80b const-wide/16 v7, 3000
+assert d[0x2259a8:0x2259ac] == bytes.fromhex('1607e803')
+d[0x2259a8:0x2259ac] = bytes.fromhex('1607b80b')
+print("5. Patched n.onReceive delay from 1000ms to 3000ms")
+
+# 6. Recalculate Checksums
 # SHA-1 covers offset 0x20 to EOF
 sha1 = hashlib.sha1(d[0x20:]).digest()
 d[0x0c:0x20] = sha1

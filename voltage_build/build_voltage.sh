@@ -18,6 +18,13 @@ export USE_CCACHE=1
 export CCACHE_EXEC=/usr/bin/ccache
 ccache -M 50G 2>/dev/null || true
 
+# Memory & Go GC tuning for Soong build graph generator
+export GOGC=50
+export GOMEMLIMIT=10GiB
+if [ -f "/swapfile_extra" ]; then
+    swapon /swapfile_extra 2>/dev/null || true
+fi
+
 mkdir -p "$WORKDIR"
 mkdir -p "$OUT_DEST"
 cd "$WORKDIR"
@@ -32,7 +39,8 @@ mkdir -p .repo/local_manifests
 cp -f "$PROJECT_DIR/voltage_build/camellia_manifest.xml" .repo/local_manifests/camellia.xml
 
 echo "=== Step 4: Syncing Source Repositories (This may take some time) ==="
-repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+repo sync -l 2>/dev/null || repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+
 
 echo "=== Step 5: Applying Native LHDC Patches ==="
 PATCH_DIR="$PROJECT_DIR/derp_patches"
@@ -93,14 +101,52 @@ EOF
     if ! grep -q "voltage_camellia" device/xiaomi/camellia/AndroidProducts.mk; then
         echo "Adding voltage_camellia to AndroidProducts.mk..."
         sed -i 's/lineage_camellia.mk/lineage_camellia.mk \\\n    \$(LOCAL_DIR)\/voltage_camellia.mk/' device/xiaomi/camellia/AndroidProducts.mk
-        echo -e "COMMON_LUNCH_CHOICES += voltage_camellia-userdebug\n" >> device/xiaomi/camellia/AndroidProducts.mk
+        echo -e "COMMON_LUNCH_CHOICES += voltage_camellia-bp2a-userdebug voltage_camellia-bp2a-user voltage_camellia-userdebug\n" >> device/xiaomi/camellia/AndroidProducts.mk
     fi
+
+    sed -i 's|vendor/lineage/config/common_full_phone.mk|vendor/voltage/config/common_full_phone.mk|g' device/xiaomi/camellia/lineage_camellia.mk 2>/dev/null || true
+    sed -i 's|vendor/lineage/config/BoardConfigReservedSize.mk|vendor/voltage/config/BoardConfigReservedSize.mk|g' device/xiaomi/camellia/BoardConfig.mk 2>/dev/null || true
+    if ! grep -q "BUILD_BROKEN_MISSING_REQUIRED_MODULES" device/xiaomi/camellia/BoardConfig.mk; then
+        sed -i 's|BUILD_BROKEN_DUP_RULES := true|BUILD_BROKEN_DUP_RULES := true\nBUILD_BROKEN_MISSING_REQUIRED_MODULES := true\nBUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true|g' device/xiaomi/camellia/BoardConfig.mk 2>/dev/null || true
+    fi
+    sed -i 's|PRODUCT_PACKAGES += \\.*FMRadio|# FMRadio disabled|g' device/xiaomi/camellia/device.mk 2>/dev/null || true
+    sed -i 's|^\$(call inherit-product, vendor/mediatek/ims/ims.mk)|# \$(call inherit-product, vendor/mediatek/ims/ims.mk)|g' device/xiaomi/camellia/device.mk 2>/dev/null || true
+    if [ -f "vendor/mediatek/ims/Android.bp" ]; then
+        mv -f vendor/mediatek/ims/Android.bp vendor/mediatek/ims/Android.bp.disabled 2>/dev/null || true
+    fi
+    if [ -f "hardware/mediatek/sensors/Android.bp" ]; then
+        mv -f hardware/mediatek/sensors/Android.bp hardware/mediatek/sensors/Android.bp.disabled 2>/dev/null || true
+    fi
+fi
+
+# Ensure compatibility symlinks between Lineage-based device trees and VoltageOS
+mkdir -p device/lineage
+ln -snf "$WORKDIR/device/voltage/sepolicy" device/lineage/sepolicy
+mkdir -p vendor/lineage
+ln -snf "$WORKDIR/vendor/voltage/config" vendor/lineage/config
+
+# Ensure cryptographic signing keys and Android.bp are generated for VoltageOS
+if [ -d "vendor/voltage-priv/keys" ] && [ ! -f "vendor/voltage-priv/keys/Android.bp" ]; then
+    echo "Generating cryptographic signing keys in vendor/voltage-priv/keys..."
+    (cd vendor/voltage-priv/keys && ./keys.sh 2>/dev/null || true)
+fi
+
+# Fix Soong select syntax error in hardware/interfaces audio Android.bp for Android 16
+if [ -f "hardware/interfaces/audio/common/all-versions/default/Android.bp" ]; then
+    sed -i 's/"true":/true:/g' hardware/interfaces/audio/common/all-versions/default/Android.bp 2>/dev/null || true
 fi
 
 echo "=== Step 6: Starting Compilation ==="
 source build/envsetup.sh
-lunch voltage_camellia-userdebug
-mka bacon -j$(nproc --all)
+lunch voltage_camellia-bp2a-userdebug || lunch voltage_camellia-userdebug
+BUILD_JOBS=$(nproc --all)
+if [ "$BUILD_JOBS" -gt 8 ]; then
+    BUILD_JOBS=8
+fi
+echo "Compiling with $BUILD_JOBS parallel jobs (optimized for 12GB RAM)..."
+mka bacon -j$BUILD_JOBS
+
+
 
 echo "=== Step 7: Build Succeeded! Copying Output Zip ==="
 ZIP_FILE=$(find out/target/product/camellia/ -maxdepth 1 -name "VoltageOS-*.zip" -type f | head -n 1)

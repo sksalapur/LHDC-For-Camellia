@@ -124,10 +124,25 @@ int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
     return fn_lhdcv5BT_free_handle((HANDLE_LHDCV5_BT)handle);
 }
 
+static uint32_t map_bitrate_to_v5(int bitrate_inx) {
+    // V5 bitrate indexes:
+    // 5 = 400 kbps (LOW)
+    // 6 = 500 kbps (MID)
+    // 7 = 900 kbps (HIGH)
+    // 8 = 1000 kbps (HIGH1)
+    if (bitrate_inx == 0) return 5;
+    if (bitrate_inx == 1) return 6;
+    if (bitrate_inx == 2 || bitrate_inx == 7) return 7;
+    if (bitrate_inx == 8) return 8;
+    if (bitrate_inx == 5 || bitrate_inx == 6) return (uint32_t)bitrate_inx;
+    // Default to 900 kbps (index 7) for solid 1-frame per packet without 2-frame batching underruns
+    return 7;
+}
+
 __attribute__((visibility("default")))
 int32_t lhdcBT_get_bitrate(HANDLE_LHDC_BT handle) {
-    if (!handle || !init_v5_lib()) return 400;
-    uint32_t br = 400000;
+    if (!handle || !init_v5_lib()) return 900;
+    uint32_t br = 900000;
     if (fn_lhdcv5BT_get_bitrate) {
         fn_lhdcv5BT_get_bitrate((HANDLE_LHDCV5_BT)handle, &br);
     }
@@ -139,16 +154,14 @@ int32_t lhdcBT_set_bitrate(HANDLE_LHDC_BT handle, int bitrate_inx) {
     LOGI("lhdcBT_set_bitrate: caller requested index=%d", bitrate_inx);
     if (!handle || !init_v5_lib()) return -1;
 
-    uint32_t max_br = 8;
-    if (bitrate_inx == 0) max_br = 5;
-    else if (bitrate_inx == 1) max_br = 6;
-    else if (bitrate_inx == 2) max_br = 7;
-    else if (bitrate_inx >= 5 && bitrate_inx <= 8) max_br = (uint32_t)bitrate_inx;
+    uint32_t target_br = map_bitrate_to_v5(bitrate_inx);
 
     if (fn_lhdcv5BT_set_max_bitrate) {
-        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
+        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
     }
-    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 9);
+    int32_t ret = fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
+    LOGI("lhdcBT_set_bitrate: set to index %u -> ret=%d", target_br, ret);
+    return ret;
 }
 
 __attribute__((visibility("default")))
@@ -156,31 +169,21 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
     LOGI("lhdcBT_set_max_bitrate: caller requested max=%u", max_bitrate_inx);
     if (!handle || !init_v5_lib()) return -1;
 
-    uint32_t max_br = 8;
-    if (max_bitrate_inx >= 5 && max_bitrate_inx <= 8) {
-        max_br = max_bitrate_inx;
-    } else if (max_bitrate_inx == 0) {
-        max_br = 5;
-    } else if (max_bitrate_inx == 1) {
-        max_br = 6;
-    } else if (max_bitrate_inx == 2) {
-        max_br = 7;
-    }
+    uint32_t target_br = map_bitrate_to_v5((int)max_bitrate_inx);
 
     if (fn_lhdcv5BT_set_max_bitrate) {
-        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
+        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
     }
-    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 9);
+    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
 }
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
-    static uint32_t s_adj_count = 0;
-    if (queueLen > 1 && (++s_adj_count % 50 == 1)) {
-        LOGI("lhdcBT_adjust_bitrate: queue congested (len=%u), dynamically scaling bitrate", queueLen);
-    }
-    return fn_lhdcv5BT_adjust_bitrate((HANDLE_LHDCV5_BT)handle, queueLen);
+    // Note: Do not downscale below 900 kbps (index 7) during streaming on LHDC V3 stack,
+    // because V5 downscaling <= 500 kbps engages 2-frame batching, returning written=0 on every
+    // other frame which starves the V3 pipeline and produces diaphragm clicks/pops.
+    return 0;
 }
 
 __attribute__((visibility("default")))
@@ -217,22 +220,19 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
     g_bits = bits_per_sample;
     g_mtu = (mtu >= 300) ? mtu : 660;
 
-    // Always initialize in ABR (AUTO) mode: index 9
-    uint32_t v5_br = 9;
+    uint32_t v5_br = map_bitrate_to_v5((int)bitrate_inx);
 
     uint32_t v5_interval = 20;
     if (interval == 10) v5_interval = 10;
 
     int32_t ret = fn_lhdcv5BT_init_encoder((HANDLE_LHDCV5_BT)handle, sample_rate, bits_per_sample, v5_br, g_mtu, v5_interval, 0);
-    LOGI("lhdcv5BT_init_encoder returned %d (ABR mode)", ret);
+    LOGI("lhdcv5BT_init_encoder returned %d (v5_br=%u)", ret, v5_br);
 
     if (fn_lhdcv5BT_set_max_bitrate) {
-        uint32_t max_br = 8; // 1000k
-        if (bitrate_inx >= 5 && bitrate_inx <= 8) max_br = bitrate_inx;
-        else if (bitrate_inx == 2) max_br = 7; // 900k
-        else if (bitrate_inx == 1) max_br = 6; // 500k
-        else if (bitrate_inx == 0) max_br = 5; // 400k
-        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
+        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
+    }
+    if (fn_lhdcv5BT_set_bitrate) {
+        fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
     }
 
     uint32_t samples = 240;

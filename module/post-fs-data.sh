@@ -10,12 +10,7 @@ if [ -f "$OVERLAY_PATCHED" ] && [ -f "$OVERLAY_TARGET" ]; then
     mount --bind "$OVERLAY_PATCHED" "$OVERLAY_TARGET"
 fi
 
-# Mount patched MiuiBluetooth.apk to allow LHDC auto-restoration for all devices
-MIUI_BT_TARGET="/system/app/MiuiBluetooth/MiuiBluetooth.apk"
-MIUI_BT_PATCHED="$MODDIR/work/MiuiBluetooth.apk"
-if [ -f "$MIUI_BT_PATCHED" ] && [ -f "$MIUI_BT_TARGET" ]; then
-    mount --bind "$MIUI_BT_PATCHED" "$MIUI_BT_TARGET" 2>/dev/null || true
-fi
+# Overlay target
 
 # Directory bind-mount for APEX lib64 (includes JNI, shim, and all V5 libs)
 APEX_LIB64="$MODDIR/apex_lib64"

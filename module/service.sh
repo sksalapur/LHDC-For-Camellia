@@ -55,14 +55,7 @@ if [ -f "$OVERLAY_PATCHED" ] && [ -f "$OVERLAY_TARGET" ]; then
     mount --bind "$OVERLAY_PATCHED" "$OVERLAY_TARGET" 2>/dev/null
 fi
 
-# Ensure patched MiuiBluetooth.apk is active
-MIUI_BT_TARGET="/system/app/MiuiBluetooth/MiuiBluetooth.apk"
-MIUI_BT_PATCHED="$MODDIR/work/MiuiBluetooth.apk"
-if [ -f "$MIUI_BT_PATCHED" ] && [ -f "$MIUI_BT_TARGET" ]; then
-    if ! grep -q "$MIUI_BT_TARGET" /proc/mounts; then
-        mount --bind "$MIUI_BT_PATCHED" "$MIUI_BT_TARGET" 2>/dev/null
-    fi
-fi
+# Overlay active
 
 # Ensure APEX lib64 directory mount is active
 APEX_LIB64="$MODDIR/apex_lib64"
@@ -104,8 +97,21 @@ if [ -f "$SHIM_PATCHED" ]; then
     done
 fi
 
-if [ "$NEED_RESTART" -eq 1 ]; then
-    killall -9 com.android.bluetooth 2>/dev/null
+# Ensure patched MiuiBluetooth.apk is active to auto-promote case reconnects to LHDC
+MIUI_BT_TARGET="/system/app/MiuiBluetooth/MiuiBluetooth.apk"
+MIUI_BT_PATCHED="$MODDIR/work/MiuiBluetooth.apk"
+if [ -f "$MIUI_BT_PATCHED" ] && [ -f "$MIUI_BT_TARGET" ]; then
+    if ! grep -q "$MIUI_BT_TARGET f2fs" /proc/mounts && ! grep -q "$MIUI_BT_TARGET ext4" /proc/mounts; then
+        mount --bind "$MIUI_BT_PATCHED" "$MIUI_BT_TARGET" 2>/dev/null
+        NEED_RESTART=1
+    fi
 fi
+
+if [ "$NEED_RESTART" -eq 1 ]; then
+    rm -f /data/dalvik-cache/arm64/*MiuiBluetooth* 2>/dev/null || true
+    am force-stop com.xiaomi.bluetooth 2>/dev/null || killall -9 com.xiaomi.bluetooth 2>/dev/null
+    am force-stop com.android.bluetooth 2>/dev/null || killall -9 com.android.bluetooth 2>/dev/null
+fi
+
 
 

@@ -82,7 +82,10 @@ graph TD
     ```
 * **Patch 4: NOP Optional Codecs Check (`Method U0` at `0x22841c`):**
   * Replaced `33 b3 0d 00` with `00 00 00 00` (`nop; nop`).
-* **Patch 5: Checksum Recalculation:**
+* **Patch 5: Incoming Case Connection Discovery Delay (`com.android.bluetooth.ble.app.headset.n.onReceive` at `0x2259a8`):**
+  * **The Race Condition:** When buds connect incoming from the charging case, they start in AAC. `n.onReceive` receives `ACTION_ACTIVE_DEVICE_CHANGED` and schedules Message `123` via `Handler.sendMessageDelayed` to trigger `U0`. Stock MIUI used a 1000ms delay (`16 07 e8 03`). However, realme Buds T500 Pro take 1.8 - 2.2 seconds to complete over-the-air AVDTP SEP discovery. At 1.0s, LHDC was not yet present in `mCodecsSelectableCapabilities`, causing `j0` to return `null` and `U0` to abort with `"failed to get codec status"`.
+  * **The Fix:** Replaced `16 07 e8 03` (`1000ms`) with `16 07 b8 0b` (`3000ms`). After 3.0 seconds, AVDTP SEP discovery is complete, `LHDC_V3` is populated in selectable capabilities, and `U0` successfully promotes the connection to LHDC without requiring manual Bluetooth toggle.
+* **Patch 6: Checksum Recalculation:**
   * Recomputed SHA-1 hash over `0x20..EOF` and wrote to `0x0c..0x1f`.
   * Recomputed Adler-32 over `0x0c..EOF` and wrote to `0x08..0x0b`.
 
@@ -99,6 +102,14 @@ graph TD
   * Mounts patched [`libbluetooth_jni.so`](file:///e:/DATA/Projects/LHDC/module/work/libbluetooth_jni.so) to `/apex/com.android.btservices/lib64/libbluetooth_jni.so`.
   * Mounts patched [`liblhdcBT_enc.so`](file:///e:/DATA/Projects/LHDC/module/system/lib64/liblhdcBT_enc.so) to `/system/lib64/` and the APEX directory.
   * Injects LHDC shared libraries (`liblhdc.so`, `liblhdcv5.so`, `liblhdcv5BT_enc.so`).
+
+### F. The Receiver Buffer Underrun & Crackle Fix
+* **The Root Cause:** In LHDC V5 (`liblhdcv5BT_enc.so` / `liblhdcv5.so`), encoding at bitrates $\le$ 500 kbps (or ABR mode) enforces a 2-frame batching policy (`encode_subframe_interval: 2`), alternating `written = 0` on every other frame. However, the stock MIUI/AOSP LHDC V3 caller in `libbluetooth_jni.so` (`a2dp_vendor_lhdcv3_send_frames`) drops any interval iteration where `written == 0`. This starved the realme Buds T500 Pro receiver buffer, triggering earbud DSP Packet Loss Concealment (PLC), producing a physical diaphragm popping / plastic crinkle sound.
+* **The Fix:** In [`lhdc_shim.c`](file:///e:/DATA/Projects/LHDC/lhdc_shim.c), the encoder is initialized and locked to 900 kbps (index 7). At 900 kbps, 1 frame is 564 bytes (filling the 660 MTU), and the encoder outputs `written = 564, out_frames = 1` on 100% of calls without buffering. Bitrate downscaling in `lhdcBT_adjust_bitrate` is locked above 500 kbps, completely eliminating packet starvation.
+
+### G. Persistent Boot Mount Detection (`module/service.sh`)
+* **The Root Cause:** MIUI mounts an existing overlay filesystem at `/system/app/MiuiBluetooth/MiuiBluetooth.apk`, causing standard `grep -q "$MIUI_BT_TARGET" /proc/mounts` checks to return success prematurely on boot, skipping our bind mount.
+* **The Fix:** Updated the check to `if ! grep -q "$MIUI_BT_TARGET f2fs" /proc/mounts && ! grep -q "$MIUI_BT_TARGET ext4" /proc/mounts; then`, ensuring [`work/MiuiBluetooth.apk`](file:///e:/DATA/Projects/LHDC/work/MiuiBluetooth.apk) is reliably mounted on every reboot.
 
 ---
 

@@ -1,0 +1,96 @@
+# ==============================================================================
+# Git Ignore Configuration for LHDC-For-Camellia
+# ==============================================================================
+
+# Bluetooth snoops, dumps, and traces
+*.cfa
+*.pcap
+*.cap
+*.log
+*.txt
+dump_*.txt
+logcat_*.txt
+bluetooth_dump*.txt
+miui_bt_dump*.txt
+infinityx_dump.txt
+bths.txt
+
+# Screenshots, diagrams, and UI XML dumps
+*.png
+*.jpg
+*.jpeg
+ui*.xml
+
+# Compiled binaries, objects, and libraries
+*.o
+*.obj
+*.elf
+*.bin
+*.class
+*.pyc
+*.dex
+__pycache__/
+
+# Scratch reverse engineering & inspection scripts
+check_*.py
+disas_*.py
+disasm_*.py
+find_*.py
+inspect_*.py
+decode_*.py
+print_*.py
+search_*.py
+test_get_codec.py
+patch_jni_v[0-7].py
+deploy_patched.sh
+inject_mount.sh
+setup_apex.sh
+AospBluetoothResOverlay_patched.apk
+miui_libbluetooth_jni*.so
+
+# Scratch test files and binaries in repository root
+/test_*
+test_feed*
+test_96k*
+test_lhdcv5*
+test_shim*
+test_asm*
+patch11*
+patch_parse*
+flag.*
+vdex_test
+
+# Scratch databases and backups
+*.db
+*.db-shm
+*.db-wal
+*.backup
+*.bak
+
+# Unneeded raw APKs and JARs in root
+/Bluetooth*.apk
+/MiuiBluetooth*.apk
+/miui_*.apk
+/timbre.apk
+/bitchord_installed.apk
+/bypass*.apk
+/manager.apk
+/ogesture*.apk
+/xgesture*.apk
+/WooBox*.apk
+/AnyLauncher*.apk
+/*.zip
+!/lhdc_camellia_enabler.zip
+/*.jar
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System files
+Thumbs.db
+Desktop.ini
+.DS_Store
