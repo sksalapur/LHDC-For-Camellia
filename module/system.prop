@@ -6,6 +6,7 @@ persist.vendor.bt.a2dp.lhdc=true
 ro.vendor.bt.a2dp.lhdc=true
 persist.vendor.bluetooth.lhdc_abr=true
 vendor.bluetooth.lhdc.abr=true
+persist.bluetooth.lhdc_bitrate=500
 bluetooth.a2dp.source.lhdcv2_priority.config=8001
 bluetooth.a2dp.source.lhdcv3_priority.config=8002
 bluetooth.a2dp.source.lhdcv5_priority.config=8003

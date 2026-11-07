@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dlfcn.h>
 #include <android/log.h>
+#include <sys/system_properties.h>
 
 #define LOG_TAG "LHDC_V5_SHIM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -128,6 +129,12 @@ int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
 }
 
 static uint32_t map_bitrate_to_v5(int bitrate_inx) {
+    char prop[92] = {0};
+    if (__system_property_get("persist.bluetooth.lhdc_bitrate", prop) > 0) {
+        if (strcmp(prop, "500") == 0) return 6;
+        if (strcmp(prop, "900") == 0) return 7;
+        if (strcmp(prop, "1000") == 0) return 8;
+    }
     // V5 bitrate indexes:
     // 5 = 400 kbps (LOW)    - batches at MTU 600 (2*252=504 <= 600) -> safely promote to 6 (500k)
     // 6 = 500 kbps (MID)    - MTU 600 single-frame (2*314=628 > 600) -> 314 bytes, 0 batching, 0 underruns
@@ -185,14 +192,16 @@ __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
-    // Dynamic queue congestion relief:
-    // On realme Buds T500 Pro (2-DH5 link), when RF interference or retransmissions occur,
-    // the Fluoride TX queue can build up. If queueLen > 2, immediately downscale to 500 kbps (index 6).
-    // At MTU 600, 500 kbps outputs 314 bytes per frame with ZERO batching and ZERO 0-byte ticks,
-    // reducing air time by ~45% to rapidly drain the MTK baseband queue and prevent dropped packets.
-    if (queueLen > 2) {
+    // Fluoride's TxQueue buffer has a maximum capacity of 28 packets.
+    // In normal operation, Fluoride batches 4 packets per 20ms tick, so queueLen
+    // routinely reaches 3 or 4 before baseband transmission.
+    // Emergency congestion relief is only necessary if queueLen > 18 (approaching the 28 packet drop limit).
+    // Downscaling on queueLen > 2 was causing the encoder to bounce between 900k and 500k
+    // every 2 seconds, which forced the earbud DSP to reset frame quantization tables
+    // and produce subtle acoustic diaphragm pops.
+    if (queueLen > 18) {
         if (s_current_bitrate_idx != 6) {
-            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u) -> downscaling to 500 kbps", queueLen);
+            LOGW("lhdcBT_adjust_bitrate: emergency congestion relief (len=%u) -> downscaling to 500 kbps", queueLen);
             s_current_bitrate_idx = 6;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
@@ -201,10 +210,10 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
         s_clean_queue_count = 0;
     } else if (queueLen == 0) {
         s_clean_queue_count++;
-        // When queue has stayed completely clear for 100 consecutive frames (~500 ms),
-        // restore target high bitrate (index 7 = 900 kbps) for full Hi-Res fidelity.
-        if (s_clean_queue_count >= 100 && s_current_bitrate_idx != s_target_high_bitrate) {
-            LOGI("lhdcBT_adjust_bitrate: queue cleared -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
+        // Require 1000 clean frames (approx 2.5 seconds of sustained 0-queue)
+        // before recovering to high bitrate, completely preventing rapid gear oscillations.
+        if (s_clean_queue_count >= 1000 && s_current_bitrate_idx != s_target_high_bitrate) {
+            LOGI("lhdcBT_adjust_bitrate: queue stable -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
             s_current_bitrate_idx = s_target_high_bitrate;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);

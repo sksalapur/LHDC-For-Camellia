@@ -36,6 +36,9 @@ $RESETPROP persist.vendor.bluetooth.lhdc_abr true 2>/dev/null
 $RESETPROP -n vendor.bluetooth.lhdc.abr true
 $RESETPROP vendor.bluetooth.lhdc.abr true 2>/dev/null
 
+$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
+$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
+
 $RESETPROP -n bluetooth.a2dp.source.lhdcv2_priority.config 8001
 $RESETPROP bluetooth.a2dp.source.lhdcv2_priority.config 8001 2>/dev/null
 
