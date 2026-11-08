@@ -1,7 +1,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 #include <dlfcn.h>
+#include <sys/system_properties.h>
 #include <android/log.h>
 
 #define LOG_TAG "LHDC_V5_SHIM"
@@ -105,8 +107,19 @@ static uint32_t g_mtu = 600;
 static uint32_t g_block_size = 480;
 static uint32_t g_bytes_per_frame = 2880;
 static uint32_t s_target_high_bitrate = 7; // Default 900 kbps (HIGH)
+static uint32_t s_last_configured_target = 7;
 static uint32_t s_current_bitrate_idx = 7;
 static uint32_t s_clean_queue_count = 0;
+static uint32_t s_warmup_frames = 0;
+
+static uint32_t get_congestion_threshold() {
+    char prop[92] = {0};
+    if (__system_property_get("persist.bluetooth.lhdc_max_queue", prop) > 0) {
+        int val = atoi(prop);
+        if (val >= 5 && val <= 25) return (uint32_t)val;
+    }
+    return 18; // Default 18 packets (Fluoride max is 28)
+}
 
 __attribute__((visibility("default")))
 HANDLE_LHDC_BT lhdcBT_get_handle(uint32_t version) {
@@ -128,8 +141,6 @@ int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
     if (!handle || !init_v5_lib()) return 0;
     return fn_lhdcv5BT_free_handle((HANDLE_LHDCV5_BT)handle);
 }
-
-#include <sys/system_properties.h>
 
 static uint32_t map_v3_to_v5_bitrate(int bitrate_inx) {
     char prop[92] = {0};
@@ -158,9 +169,11 @@ int32_t lhdcBT_set_bitrate(HANDLE_LHDC_BT handle, int bitrate_inx) {
     if (!handle || !init_v5_lib()) return -1;
 
     uint32_t v5_br = map_v3_to_v5_bitrate(bitrate_inx);
+    s_last_configured_target = v5_br;
     s_target_high_bitrate = v5_br;
     s_current_bitrate_idx = v5_br;
     s_clean_queue_count = 0;
+    s_warmup_frames = 0;
 
     if (fn_lhdcv5BT_set_max_bitrate) {
         fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
@@ -176,6 +189,7 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
     if (!handle || !init_v5_lib()) return -1;
 
     uint32_t max_br = map_v3_to_v5_bitrate((int)max_bitrate_inx);
+    s_last_configured_target = max_br;
     s_target_high_bitrate = max_br;
     s_current_bitrate_idx = max_br;
     s_clean_queue_count = 0;
@@ -190,31 +204,52 @@ __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
-    // Dynamic queue congestion relief:
-    // If Fluoride queue reaches > 3 (e.g. during AVRCP volume event or RF retransmission),
-    // immediately downscale to 500 kbps (index 6, 314 bytes/frame) to drain the queue in <20ms
-    // and permanently prevent the 28-packet overflow limit from dropping packets.
-    if (queueLen > 3) {
+    // Skip adjustment during initial connection / pre-buffering warmup (200 frames ~ 1 sec)
+    if (s_warmup_frames < 200) {
+        s_warmup_frames++;
+        return 0;
+    }
+
+    uint32_t threshold = get_congestion_threshold();
+
+    // Congestion downscale:
+    // Only downscale if queue exceeds threshold (default 18, approaching the 28-packet buffer limit).
+    // Normal Bluetooth multiplexing bursts up to 12-14 packets drain naturally and are completely harmless.
+    if (queueLen > threshold) {
         if (s_current_bitrate_idx != 6) {
-            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u) -> downscaling to 500 kbps", queueLen);
+            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u > %u) -> downscaling to 500 kbps", queueLen, threshold);
             s_current_bitrate_idx = 6;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
             }
         }
         s_clean_queue_count = 0;
-    } else if (queueLen == 0) {
+    } else if (queueLen <= 3) {
         s_clean_queue_count++;
-        // When queue has stayed completely clear for 100 consecutive frames (~2 seconds),
-        // restore target high bitrate if allowed by system property.
-        if (s_clean_queue_count >= 100 && s_current_bitrate_idx != s_target_high_bitrate) {
-            uint32_t allowed_target = map_v3_to_v5_bitrate(0);
-            if (allowed_target == 6) {
-                s_target_high_bitrate = 6;
-                s_current_bitrate_idx = 6;
+
+        // Periodic property polling every 50 clean frames (~250ms).
+        // If the user or ANC mode switcher explicitly changed persist.bluetooth.lhdc_bitrate, apply immediately!
+        if (s_clean_queue_count % 50 == 0) {
+            uint32_t new_target = map_v3_to_v5_bitrate(0);
+            if (new_target != s_last_configured_target) {
+                LOGI("lhdcBT_adjust_bitrate: target bitrate property changed: index %u -> %u", s_last_configured_target, new_target);
+                s_last_configured_target = new_target;
+                s_target_high_bitrate = new_target;
+                s_current_bitrate_idx = new_target;
+                if (fn_lhdcv5BT_set_bitrate) {
+                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
+                }
+                s_clean_queue_count = 0;
                 return 0;
             }
-            LOGI("lhdcBT_adjust_bitrate: queue cleared -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
+        }
+
+        // Anti-hunting congestion recovery:
+        // Require 200 consecutive clean frames (~1 second of sustained clean radio link)
+        // before attempting to upscale back to the high bitrate.
+        if (s_current_bitrate_idx != s_target_high_bitrate && s_clean_queue_count >= 200) {
+            LOGI("lhdcBT_adjust_bitrate: queue healthy for %u frames -> restoring to target index %u",
+                 s_clean_queue_count, s_target_high_bitrate);
             s_current_bitrate_idx = s_target_high_bitrate;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
@@ -255,18 +290,31 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
 
     g_sample_rate = sample_rate;
     g_bits = bits_per_sample;
-    // Critical: Clamp encoder MTU to 600 bytes.
-    // At 600 bytes MTU:
-    // - 900 kbps produces 564 bytes/frame. 2 * 564 = 1128 > 600 -> exactly 1 frame per packet (0 batching).
-    // - 500 kbps produces 314 bytes/frame. 2 * 314 = 628 > 600 -> exactly 1 frame per packet (0 batching).
-    // Neither rate batches subframes into packets! 100% of calls produce written > 0 (1 frame).
-    // This permanently prevents receiver buffer starvation and eliminates diaphragm plastic movement noise.
-    g_mtu = 600;
 
     uint32_t v5_br = map_v3_to_v5_bitrate((int)bitrate_inx);
+    s_last_configured_target = v5_br;
     s_target_high_bitrate = v5_br;
     s_current_bitrate_idx = v5_br;
     s_clean_queue_count = 0;
+    s_warmup_frames = 0;
+
+    // MTU Clamping:
+    // If target bitrate is 1000 kbps (v5_br == 8), 1 frame is ~628 bytes.
+    // MTU must be at least 660 to fit 1 frame without overflow.
+    // At MTU 660, 628 bytes is strictly 1 frame per packet (0 batching)!
+    // If target bitrate is 900 kbps (564 bytes) or 500 kbps (314 bytes), MTU is clamped to 600
+    // so both remain strictly single-frame unbatched (0 batching).
+    char mtu_prop[92] = {0};
+    if (__system_property_get("persist.bluetooth.lhdc_mtu", mtu_prop) > 0) {
+        int custom_mtu = atoi(mtu_prop);
+        if (custom_mtu >= 300 && custom_mtu <= 1000) {
+            g_mtu = (uint32_t)custom_mtu;
+        } else {
+            g_mtu = (v5_br == 8) ? 660 : 600;
+        }
+    } else {
+        g_mtu = (v5_br == 8) ? 660 : 600;
+    }
 
     uint32_t v5_interval = 20;
     if (interval == 10) v5_interval = 10;
