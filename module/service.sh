@@ -52,8 +52,8 @@ $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 $RESETPROP -n persist.bluetooth.disableabsvol false
 $RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_bitrate 1000
-$RESETPROP persist.bluetooth.lhdc_bitrate 1000 2>/dev/null
+$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
+$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
 
 $RESETPROP -n persist.bluetooth.lhdc_mtu 660
 $RESETPROP persist.bluetooth.lhdc_mtu 660 2>/dev/null

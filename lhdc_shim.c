@@ -106,21 +106,20 @@ static uint32_t g_bits = 24;
 static uint32_t g_mtu = 660;
 static uint32_t g_block_size = 240;
 static uint32_t g_bytes_per_frame = 1440;
-static uint32_t s_target_high_bitrate = 8; // Default 1000 kbps (Hard-locked Uncapped)
-static uint32_t s_last_configured_target = 8;
-static uint32_t s_current_bitrate_idx = 8;
+static uint32_t s_target_high_bitrate = 6; // Default 500 kbps (MID - 48k/24b batched 2 frames/pkt)
+static uint32_t s_last_configured_target = 6;
+static uint32_t s_current_bitrate_idx = 6;
 static uint32_t s_clean_queue_count = 0;
 static uint32_t s_congested_count = 0;
 static uint32_t s_warmup_frames = 0;
 
-__attribute__((unused))
 static uint32_t get_congestion_threshold() {
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_max_queue", prop) > 0) {
         int val = atoi(prop);
         if (val >= 20 && val <= 100) return (uint32_t)val;
     }
-    return 80; // Default 80 packets (40-packet safety cushion before Fluoride's 120 limit)
+    return 80; // 80 packets (gives 40-packet safety cushion before Fluoride 120 limit)
 }
 
 __attribute__((visibility("default")))
@@ -148,10 +147,11 @@ static uint32_t map_v3_to_v5_bitrate(int bitrate_inx) {
     (void)bitrate_inx;
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_bitrate", prop) > 0) {
-        if (strcmp(prop, "500") == 0) return 6;
+        if (strcmp(prop, "1000") == 0) return 8;
         if (strcmp(prop, "900") == 0) return 7;
+        if (strcmp(prop, "500") == 0) return 6;
     }
-    return 8; // Locked 1000 kbps (Uncapped)
+    return 6; // Default 500 kbps (MID - 2 frames/pkt)
 }
 
 __attribute__((visibility("default")))
@@ -205,9 +205,81 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
-    (void)handle;
-    (void)queueLen;
-    // Hard-locked at 1000 kbps (Uncapped): Downscaling and ABR are permanently disabled!
+    if (!handle || !init_v5_lib()) return -1;
+
+    // Check if ABR is enabled via system property
+    char abr_prop[92] = {0};
+    bool abr_enabled = true;
+    if (__system_property_get("persist.vendor.bluetooth.lhdc_abr", abr_prop) > 0 ||
+        __system_property_get("vendor.bluetooth.lhdc.abr", abr_prop) > 0) {
+        if (strcmp(abr_prop, "false") == 0 || strcmp(abr_prop, "0") == 0) {
+            abr_enabled = false;
+        }
+    }
+
+    // Skip adjustment during initial connection warmup (2000 frames ~ 10 sec)
+    if (s_warmup_frames < 2000) {
+        s_warmup_frames++;
+        return 0;
+    }
+
+    uint32_t threshold = get_congestion_threshold();
+
+    if (abr_enabled && queueLen > threshold) {
+        s_congested_count++;
+        // 5 consecutive congested frames to filter transient radio multiplexing spikes
+        if (s_congested_count >= 5) {
+            if (s_current_bitrate_idx > 6) {
+                LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u > %u) -> ABR stepping down index %u -> 6 (500k)",
+                     queueLen, threshold, s_current_bitrate_idx);
+                s_current_bitrate_idx = 6;
+                if (fn_lhdcv5BT_set_bitrate) {
+                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
+                }
+            } else if (queueLen > 110 && s_current_bitrate_idx > 4) {
+                LOGW("lhdcBT_adjust_bitrate: severe queue congestion (len=%u > 110) -> emergency downscale to index 4",
+                     queueLen);
+                s_current_bitrate_idx = 4;
+                if (fn_lhdcv5BT_set_bitrate) {
+                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 4);
+                }
+            }
+            s_clean_queue_count = 0;
+        }
+    } else {
+        s_congested_count = 0;
+        if (queueLen <= 50) {
+            s_clean_queue_count++;
+
+            // Property polling every 20 clean frames (~100ms)
+            if (s_clean_queue_count % 20 == 0) {
+                uint32_t new_target = map_v3_to_v5_bitrate(0);
+                if (new_target != s_last_configured_target) {
+                    LOGI("lhdcBT_adjust_bitrate: target bitrate changed: %u -> %u", s_last_configured_target, new_target);
+                    s_last_configured_target = new_target;
+                    s_target_high_bitrate = new_target;
+                    s_current_bitrate_idx = new_target;
+                    if (fn_lhdcv5BT_set_bitrate) {
+                        fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
+                    }
+                    s_clean_queue_count = 0;
+                    return 0;
+                }
+            }
+
+            // ABR step-up recovery:
+            // When link stays healthy for 300 frames (~1.5s), restore target bitrate
+            if (abr_enabled && s_current_bitrate_idx < s_target_high_bitrate && s_clean_queue_count >= 300) {
+                LOGI("lhdcBT_adjust_bitrate: queue clean for %u frames -> ABR restoring to target index %u",
+                     s_clean_queue_count, s_target_high_bitrate);
+                s_current_bitrate_idx = s_target_high_bitrate;
+                if (fn_lhdcv5BT_set_bitrate) {
+                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
+                }
+                s_clean_queue_count = 0;
+            }
+        }
+    }
     return 0;
 }
 
