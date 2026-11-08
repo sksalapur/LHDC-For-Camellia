@@ -52,11 +52,11 @@ $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 $RESETPROP -n persist.bluetooth.disableabsvol false
 $RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
-$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
+$RESETPROP -n persist.bluetooth.lhdc_bitrate 1000
+$RESETPROP persist.bluetooth.lhdc_bitrate 1000 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_mtu 500
-$RESETPROP persist.bluetooth.lhdc_mtu 500 2>/dev/null
+$RESETPROP -n persist.bluetooth.lhdc_mtu 600
+$RESETPROP persist.bluetooth.lhdc_mtu 600 2>/dev/null
 
 $RESETPROP -n persist.bluetooth.lhdc_max_queue 24
 $RESETPROP persist.bluetooth.lhdc_max_queue 24 2>/dev/null
@@ -128,16 +128,5 @@ fi
 # Kill any lingering instances of port 9092 listener
 pkill -9 -f "9092 -L" 2>/dev/null || true
 pkill -9 -f "$MODDIR/scripts/server.sh" 2>/dev/null || true
-
-# Start LHDC WebUI HTTP Server on port 9092
-(
-    chmod +x "$MODDIR/scripts/server.sh" 2>/dev/null
-    while true; do
-        if ! pgrep -f "9092 -L" >/dev/null 2>&1; then
-            nohup toybox nc -s 127.0.0.1 -p 9092 -L /system/bin/sh "$MODDIR/scripts/server.sh" </dev/null >/dev/null 2>&1 &
-        fi
-        sleep 5
-    done
-) </dev/null >/dev/null 2>&1 &
 
 exit 0

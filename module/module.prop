@@ -1,6 +1,6 @@
 id=lhdc_codec_old
 name=LHDC Codec For Camellia
-version=v1.5-WebUI
-versionCode=6
+version=v1.6-Stable
+versionCode=7
 author=SKSALAPUR & Antigravity
-description=LHDC v5 audiophile implementation for Camellia with interactive WebUI Tuner (Port 9092 & APatch WebUI).
+description=LHDC v5 audiophile implementation for Camellia tuned at 1000 kbps @ MTU 600 (48kHz/24-bit Hi-Res).

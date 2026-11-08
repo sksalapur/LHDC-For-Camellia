@@ -3,9 +3,6 @@
 *.prop text eol=lf
 *.rule text eol=lf
 *.json text eol=lf
-*.html text eol=lf
-*.css text eol=lf
-*.js text eol=lf
 *.so binary
 *.apk binary
 *.zip binary
