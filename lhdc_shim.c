@@ -117,9 +117,9 @@ static uint32_t get_congestion_threshold() {
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_max_queue", prop) > 0) {
         int val = atoi(prop);
-        if (val >= 5 && val <= 26) return (uint32_t)val;
+        if (val >= 5 && val <= 115) return (uint32_t)val;
     }
-    return 24; // Default 24 packets (Fluoride max is 28; absorbs normal transient RF hiccups)
+    return 105; // Default 105 packets (Fluoride max is 120; absorbs normal transient RF hiccups)
 }
 
 __attribute__((visibility("default")))
@@ -207,8 +207,8 @@ __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
-    // Skip adjustment during initial connection / pre-buffering warmup (200 frames ~ 1 sec)
-    if (s_warmup_frames < 200) {
+    // Skip adjustment during initial connection / pre-buffering warmup (1000 frames ~ 5 sec)
+    if (s_warmup_frames < 1000) {
         s_warmup_frames++;
         return 0;
     }
@@ -216,12 +216,11 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     uint32_t threshold = get_congestion_threshold();
 
     // Congestion downscale:
-    // Only downscale if queue exceeds threshold (default 24, approaching the 28-packet buffer limit).
-    // Normal Bluetooth multiplexing bursts up to 18-20 packets drain naturally and are completely harmless.
+    // Only downscale if queue exceeds threshold (default 105, Fluoride max is 120).
     if (queueLen > threshold) {
         s_congested_count++;
-        // Require 3 consecutive congested frames to filter out instantaneous radio multiplexing spikes
-        if (s_congested_count >= 3) {
+        // Require 10 consecutive congested frames (~50ms sustained backlog)
+        if (s_congested_count >= 10) {
             if (s_current_bitrate_idx != 6) {
                 LOGW("lhdcBT_adjust_bitrate: queue persistently congested (len=%u > %u, count=%u) -> downscaling to 500 kbps",
                      queueLen, threshold, s_congested_count);
@@ -234,11 +233,11 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
         }
     } else {
         s_congested_count = 0;
-        if (queueLen <= 3) {
+        if (queueLen <= 40) {
             s_clean_queue_count++;
 
             // Periodic property polling every 20 clean frames (~100ms).
-            // If the user or ANC mode switcher explicitly changed persist.bluetooth.lhdc_bitrate, apply immediately!
+            // If the user explicitly changed persist.bluetooth.lhdc_bitrate, apply immediately!
             if (s_clean_queue_count % 20 == 0) {
                 uint32_t new_target = map_v3_to_v5_bitrate(0);
                 if (new_target != s_last_configured_target) {
@@ -254,11 +253,10 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
                 }
             }
 
-            // Anti-hunting congestion recovery:
-            // Require 3000 consecutive clean frames (~15 seconds of sustained clean radio link)
-            // before attempting to upscale back to the high bitrate.
-            if (s_current_bitrate_idx != s_target_high_bitrate && s_clean_queue_count >= 3000) {
-                LOGI("lhdcBT_adjust_bitrate: queue healthy for %u frames (15s) -> restoring to target index %u",
+            // Congestion recovery:
+            // Require 600 consecutive clean frames (~3 seconds) to restore target bitrate
+            if (s_current_bitrate_idx != s_target_high_bitrate && s_clean_queue_count >= 600) {
+                LOGI("lhdcBT_adjust_bitrate: queue healthy for %u frames -> restoring to target index %u",
                      s_clean_queue_count, s_target_high_bitrate);
                 s_current_bitrate_idx = s_target_high_bitrate;
                 if (fn_lhdcv5BT_set_bitrate) {
