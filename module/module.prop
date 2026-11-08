@@ -1,6 +1,6 @@
 id=lhdc_codec_old
 name=LHDC Codec For Camellia
-version=v1.4-AntiHunting
-versionCode=5
+version=v1.5-WebUI
+versionCode=6
 author=SKSALAPUR & Antigravity
-description=LHDC v5 audiophile implementation for Camellia with anti-hunting congestion filter, queue tolerance (max_queue=24), and dynamic ANC mode switcher (900k Normal / 500k ANC @ MTU 600).
+description=LHDC v5 audiophile implementation for Camellia with interactive WebUI Tuner (Port 9092 & APatch WebUI).

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LHDC Audiophile Tuner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Header -->
+    <header class="glass-card header-card">
+      <div>
+        <div class="brand-badge">APATCH / KERNELSU • AUDIO LAB</div>
+        <h1 class="header-title">LHDC V5 Codec Tuner</h1>
+        <div class="header-sub">realme Buds T500 Pro • Dimensity 700 (camellia)</div>
+      </div>
+      <button id="btn-refresh" class="btn-icon" title="Refresh Telemetry">🔄</button>
+    </header>
+
+    <!-- Telemetry Cards -->
+    <section class="glass-card">
+      <div class="section-title">
+        <span>Active Codec Telemetry</span>
+        <span id="bt-connection-status" class="badge badge-green">CONNECTED</span>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telem-box">
+          <div class="telem-label">Bitrate</div>
+          <div id="telem-bitrate" class="telem-val">500k</div>
+        </div>
+        <div class="telem-box">
+          <div class="telem-label">MTU Limit</div>
+          <div id="telem-mtu" class="telem-val">600</div>
+        </div>
+        <div class="telem-box">
+          <div class="telem-label">ANC Mode</div>
+          <div id="telem-mode" class="telem-val mode">NORMAL</div>
+        </div>
+      </div>
+
+      <!-- Battery Status -->
+      <div class="telemetry-grid" style="margin-top: 8px;">
+        <div class="telem-box">
+          <div class="telem-label">Left Bud</div>
+          <div id="telem-batt-l" class="telem-val" style="color:#fff;">--%</div>
+        </div>
+        <div class="telem-box">
+          <div class="telem-label">Right Bud</div>
+          <div id="telem-batt-r" class="telem-val" style="color:#fff;">--%</div>
+        </div>
+        <div class="telem-box">
+          <div class="telem-label">Case</div>
+          <div id="telem-batt-c" class="telem-val" style="color:#fff;">--%</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Real-time Noise Cancellation Mode Toggles -->
+    <section class="glass-card">
+      <div class="section-title">Earbuds ANC Mode Test</div>
+      <div class="anc-btn-group">
+        <button id="mode-normal" class="btn-anc active" onclick="setAncMode('NORMAL')">
+          <span style="font-size:16px;">⚪</span>
+          <span>Normal</span>
+          <span style="font-size:9px;color:var(--text-dim);font-weight:400;">No Pop</span>
+        </button>
+        <button id="mode-anc" class="btn-anc" onclick="setAncMode('ANC')">
+          <span style="font-size:16px;">🛡️</span>
+          <span>ANC</span>
+          <span style="font-size:9px;color:var(--text-dim);font-weight:400;">High Gain</span>
+        </button>
+        <button id="mode-transparency" class="btn-anc" onclick="setAncMode('TRANSPARENCY')">
+          <span style="font-size:16px;">🔊</span>
+          <span>Ambient</span>
+          <span style="font-size:9px;color:var(--text-dim);font-weight:400;">Passthrough</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Pre-Calculated Combination Matrix (The Test Suite) -->
+    <section class="glass-card">
+      <div class="section-title">
+        <span>Bitrate & MTU Combinations</span>
+        <span class="badge badge-cyan">9 Combinations</span>
+      </div>
+      <div class="combo-grid" id="combos-container">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </section>
+
+    <!-- Custom Granular Tuning -->
+    <section class="glass-card">
+      <div class="section-title">Manual Custom Override</div>
+      
+      <div class="granular-row">
+        <div class="control-label">
+          <span>Bitrate</span>
+          <span id="lbl-custom-br" style="color:var(--accent-cyan);font-family:var(--font-mono);">500 kbps</span>
+        </div>
+        <div class="segmented-control" id="seg-bitrate">
+          <button class="seg-btn active" data-val="500">500k</button>
+          <button class="seg-btn" data-val="900">900k</button>
+          <button class="seg-btn" data-val="1000">1000k</button>
+        </div>
+      </div>
+
+      <div class="granular-row">
+        <div class="control-label">
+          <span>MTU Packet Size</span>
+          <span id="lbl-custom-mtu" style="color:var(--accent-cyan);font-family:var(--font-mono);">600</span>
+        </div>
+        <div class="segmented-control" id="seg-mtu">
+          <button class="seg-btn" data-val="500">500</button>
+          <button class="seg-btn active" data-val="600">600</button>
+          <button class="seg-btn" data-val="660">660</button>
+        </div>
+      </div>
+
+      <div class="granular-row">
+        <div class="control-label">
+          <span>Queue Congestion Threshold</span>
+          <span id="lbl-custom-q" style="color:var(--accent-cyan);font-family:var(--font-mono);">18 Packets</span>
+        </div>
+        <div class="segmented-control" id="seg-queue">
+          <button class="seg-btn" data-val="12">12</button>
+          <button class="seg-btn" data-val="15">15</button>
+          <button class="seg-btn active" data-val="18">18</button>
+          <button class="seg-btn" data-val="22">22</button>
+        </div>
+      </div>
+
+      <div class="master-actions">
+        <button id="btn-apply-live" class="btn-primary" onclick="applyCustom(false)">Apply Live</button>
+        <button id="btn-apply-restart" class="btn-secondary" onclick="applyCustom(true)">Apply & Restart BT</button>
+      </div>
+    </section>
+
+    <!-- Real-time Encoder Logs -->
+    <section class="glass-card">
+      <div class="section-title">
+        <span>Encoder Live Terminal</span>
+        <button id="btn-clear-logs" style="background:none;border:none;color:var(--accent-cyan);font-family:var(--font-mono);font-size:11px;cursor:pointer;">CLEAR</button>
+      </div>
+      <div id="terminal-view" class="terminal-box">Listening to LHDC_V5_SHIM...</div>
+    </section>
+
+  </div>
+
+  <div id="toast" class="toast">Settings applied successfully</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
