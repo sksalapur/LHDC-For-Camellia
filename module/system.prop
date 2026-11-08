@@ -11,4 +11,6 @@ bluetooth.a2dp.source.lhdcv3_priority.config=8002
 bluetooth.a2dp.source.lhdcv5_priority.config=8003
 persist.bluetooth.a2dp_offload.disabled=false
 persist.bluetooth.disableabsvol=false
-persist.bluetooth.lhdc_bitrate=500
+persist.bluetooth.lhdc_bitrate=900
+persist.bluetooth.lhdc_mtu=600
+persist.bluetooth.lhdc_max_queue=18
