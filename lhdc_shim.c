@@ -106,9 +106,9 @@ static uint32_t g_bits = 24;
 static uint32_t g_mtu = 600;
 static uint32_t g_block_size = 480;
 static uint32_t g_bytes_per_frame = 2880;
-static uint32_t s_target_high_bitrate = 7; // Default 900 kbps (HIGH)
-static uint32_t s_last_configured_target = 7;
-static uint32_t s_current_bitrate_idx = 7;
+static uint32_t s_target_high_bitrate = 6; // Default 500 kbps (MID - rock-solid 96k/24b @ MTU 600)
+static uint32_t s_last_configured_target = 6;
+static uint32_t s_current_bitrate_idx = 6;
 static uint32_t s_clean_queue_count = 0;
 static uint32_t s_congested_count = 0;
 static uint32_t s_warmup_frames = 0;
@@ -150,8 +150,8 @@ static uint32_t map_v3_to_v5_bitrate(int bitrate_inx) {
         if (strcmp(prop, "900") == 0) return 7;
         if (strcmp(prop, "500") == 0) return 6;
     }
-    if (bitrate_inx == 1 || bitrate_inx == 5 || bitrate_inx == 6) return 6;
-    return 7; // Default 900 kbps
+    if (bitrate_inx == 7 || bitrate_inx == 2) return 7;
+    return 6; // Default 500 kbps (MID)
 }
 
 __attribute__((visibility("default")))

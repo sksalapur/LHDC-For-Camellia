@@ -52,8 +52,8 @@ $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 $RESETPROP -n persist.bluetooth.disableabsvol false
 $RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_bitrate 900
-$RESETPROP persist.bluetooth.lhdc_bitrate 900 2>/dev/null
+$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
+$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
 
 $RESETPROP -n persist.bluetooth.lhdc_mtu 600
 $RESETPROP persist.bluetooth.lhdc_mtu 600 2>/dev/null
@@ -124,28 +124,5 @@ if [ "$NEED_RESTART" -eq 1 ]; then
     am force-stop com.xiaomi.bluetooth 2>/dev/null || killall -9 com.xiaomi.bluetooth 2>/dev/null
     am force-stop com.android.bluetooth 2>/dev/null || killall -9 com.android.bluetooth 2>/dev/null
 fi
-
-# Mode-aware ANC / Ambient Bitrate Switcher Daemon
-# Continuously monitors realme_anc_prefs.xml so stem pinches and UI toggles
-# immediately switch LHDC bitrate: 900 kbps for NORMAL, 500 kbps for ANC / TRANSPARENCY @ MTU 600
-(
-    LAST_ANC_MODE=""
-    PREFS_FILE="/data/data/com.music.bypass/shared_prefs/realme_anc_prefs.xml"
-    while true; do
-        if [ -f "$PREFS_FILE" ]; then
-            ACTIVE_MODE=$(grep -o 'name="active_mode">[^<]*' "$PREFS_FILE" 2>/dev/null | cut -d'>' -f2)
-            if [ -n "$ACTIVE_MODE" ] && [ "$ACTIVE_MODE" != "$LAST_ANC_MODE" ]; then
-                LAST_ANC_MODE="$ACTIVE_MODE"
-                $RESETPROP -n persist.bluetooth.lhdc_mtu 600
-                if [ "$ACTIVE_MODE" = "NORMAL" ]; then
-                    $RESETPROP -n persist.bluetooth.lhdc_bitrate 900
-                else
-                    $RESETPROP -n persist.bluetooth.lhdc_bitrate 500
-                fi
-            fi
-        fi
-        sleep 1
-    done
-) &
 
 exit 0
