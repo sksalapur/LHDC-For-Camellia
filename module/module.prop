@@ -1,6 +1,6 @@
 id=lhdc_codec_old
-name=LHDC Codec Old Implementation
-version=v1.3-Adaptive
-versionCode=4
+name=LHDC Codec For Camellia
+version=v1.4-AntiHunting
+versionCode=5
 author=SKSALAPUR & Antigravity
-description=LHDC v5 audiophile implementation for Camellia with dynamic ANC mode bitrate switcher (900k Normal / 500k ANC @ MTU 600).
+description=LHDC v5 audiophile implementation for Camellia with anti-hunting congestion filter, queue tolerance (max_queue=24), and dynamic ANC mode switcher (900k Normal / 500k ANC @ MTU 600).

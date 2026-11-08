@@ -13,4 +13,4 @@ persist.bluetooth.a2dp_offload.disabled=false
 persist.bluetooth.disableabsvol=false
 persist.bluetooth.lhdc_bitrate=900
 persist.bluetooth.lhdc_mtu=600
-persist.bluetooth.lhdc_max_queue=18
+persist.bluetooth.lhdc_max_queue=24
