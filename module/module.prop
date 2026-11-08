@@ -1,6 +1,6 @@
 id=lhdc_codec_old
 name=LHDC Codec Old Implementation
-version=v1.0-Initial
-versionCode=1
+version=v1.2-WebUI
+versionCode=3
 author=SKSALAPUR & Antigravity
-description=Initial minimal working LHDC v3/v5 implementation for Camellia (ABR auto mode).
+description=LHDC v5 audiophile implementation for Camellia with interactive WebUI tuner (Port 9092 & APatch WebUI).

@@ -118,3 +118,20 @@ if [ "$NEED_RESTART" -eq 1 ]; then
     am force-stop com.xiaomi.bluetooth 2>/dev/null || killall -9 com.xiaomi.bluetooth 2>/dev/null
     am force-stop com.android.bluetooth 2>/dev/null || killall -9 com.android.bluetooth 2>/dev/null
 fi
+
+# Kill any lingering instances of port 9092 listener
+pkill -9 -f "9092 -L" 2>/dev/null || true
+pkill -9 -f "$MODDIR/scripts/server.sh" 2>/dev/null || true
+
+# Start LHDC WebUI HTTP Server on port 9092
+(
+    chmod +x "$MODDIR/scripts/server.sh" 2>/dev/null
+    while true; do
+        if ! pgrep -f "9092 -L" >/dev/null 2>&1; then
+            nohup toybox nc -s 127.0.0.1 -p 9092 -L /system/bin/sh "$MODDIR/scripts/server.sh" </dev/null >/dev/null 2>&1 &
+        fi
+        sleep 5
+    done
+) </dev/null >/dev/null 2>&1 &
+
+exit 0
