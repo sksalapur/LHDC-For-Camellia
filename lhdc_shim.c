@@ -328,6 +328,16 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
         g_mtu = (v5_br == 8) ? 660 : 600;
     }
 
+    // Physical constraint safety guard:
+    // At 1000 kbps (v5_br == 8), a single LHDC frame is exactly 626 bytes.
+    // If MTU is configured < 660 (e.g. 600), the frame cannot fit in 1 packet and
+    // lhdcv5BT_encode will fail with ret=-10 (written=0, dropping all audio silently).
+    // Automatically clamp to 660 to ensure zero-loss unbatched delivery.
+    if (v5_br == 8 && g_mtu < 660) {
+        LOGW("Target is 1000 kbps (626B frame) but MTU=%u (< 660). Clamping MTU to 660 to prevent silent -10 drops!", g_mtu);
+        g_mtu = 660;
+    }
+
     uint32_t v5_interval = 20;
     if (interval == 10) v5_interval = 10;
 

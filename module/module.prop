@@ -3,4 +3,4 @@ name=LHDC Codec For Camellia
 version=v1.6-Stable
 versionCode=7
 author=SKSALAPUR & Antigravity
-description=LHDC v5 audiophile implementation for Camellia tuned at 1000 kbps @ MTU 600 (48kHz/24-bit Hi-Res).
+description=LHDC v5 audiophile implementation for Camellia locked at 1000 kbps @ MTU 660 (48kHz/24-bit Hi-Res unbatched).
