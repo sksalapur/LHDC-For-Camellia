@@ -49,8 +49,8 @@ $RESETPROP bluetooth.a2dp.source.lhdcv5_priority.config 8003 2>/dev/null
 $RESETPROP -n persist.bluetooth.a2dp_offload.disabled false
 $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.disableabsvol true
-$RESETPROP persist.bluetooth.disableabsvol true 2>/dev/null
+$RESETPROP -n persist.bluetooth.disableabsvol false
+$RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
 
 $RESETPROP -n persist.bluetooth.lhdc_bitrate 500
 $RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
