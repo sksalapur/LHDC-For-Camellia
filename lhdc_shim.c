@@ -106,13 +106,14 @@ static uint32_t g_bits = 24;
 static uint32_t g_mtu = 660;
 static uint32_t g_block_size = 240;
 static uint32_t g_bytes_per_frame = 1440;
-static uint32_t s_target_high_bitrate = 6; // Default 500 kbps (MID - rock-solid 96k/24b @ MTU 600)
-static uint32_t s_last_configured_target = 6;
-static uint32_t s_current_bitrate_idx = 6;
+static uint32_t s_target_high_bitrate = 8; // Default 1000 kbps (Hard-locked Uncapped)
+static uint32_t s_last_configured_target = 8;
+static uint32_t s_current_bitrate_idx = 8;
 static uint32_t s_clean_queue_count = 0;
 static uint32_t s_congested_count = 0;
 static uint32_t s_warmup_frames = 0;
 
+__attribute__((unused))
 static uint32_t get_congestion_threshold() {
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_max_queue", prop) > 0) {
@@ -144,14 +145,13 @@ int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
 }
 
 static uint32_t map_v3_to_v5_bitrate(int bitrate_inx) {
+    (void)bitrate_inx;
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_bitrate", prop) > 0) {
-        if (strcmp(prop, "1000") == 0) return 8;
-        if (strcmp(prop, "900") == 0) return 7;
         if (strcmp(prop, "500") == 0) return 6;
+        if (strcmp(prop, "900") == 0) return 7;
     }
-    if (bitrate_inx == 7 || bitrate_inx == 2) return 7;
-    return 6; // Default 500 kbps (MID)
+    return 8; // Locked 1000 kbps (Uncapped)
 }
 
 __attribute__((visibility("default")))
@@ -205,67 +205,9 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
-    if (!handle || !init_v5_lib()) return -1;
-
-    // Skip adjustment during initial connection / pre-buffering warmup (1000 frames ~ 5 sec)
-    if (s_warmup_frames < 1000) {
-        s_warmup_frames++;
-        return 0;
-    }
-
-    uint32_t threshold = get_congestion_threshold();
-
-    // Congestion downscale:
-    // Only downscale if queue exceeds threshold (default 80, giving 40 packets safety cushion before Fluoride 120).
-    if (queueLen > threshold) {
-        s_congested_count++;
-        // Require 3 consecutive congested frames (~15ms) to react before Fluoride buffer limit is reached
-        if (s_congested_count >= 3) {
-            if (s_current_bitrate_idx != 6) {
-                LOGW("lhdcBT_adjust_bitrate: queue persistently congested (len=%u > %u, count=%u) -> downscaling to 500 kbps",
-                     queueLen, threshold, s_congested_count);
-                s_current_bitrate_idx = 6;
-                if (fn_lhdcv5BT_set_bitrate) {
-                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
-                }
-            }
-            s_clean_queue_count = 0;
-        }
-    } else {
-        s_congested_count = 0;
-        if (queueLen <= 40) {
-            s_clean_queue_count++;
-
-            // Periodic property polling every 20 clean frames (~100ms).
-            // If the user explicitly changed persist.bluetooth.lhdc_bitrate, apply immediately!
-            if (s_clean_queue_count % 20 == 0) {
-                uint32_t new_target = map_v3_to_v5_bitrate(0);
-                if (new_target != s_last_configured_target) {
-                    LOGI("lhdcBT_adjust_bitrate: target bitrate property changed: index %u -> %u", s_last_configured_target, new_target);
-                    s_last_configured_target = new_target;
-                    s_target_high_bitrate = new_target;
-                    s_current_bitrate_idx = new_target;
-                    if (fn_lhdcv5BT_set_bitrate) {
-                        fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
-                    }
-                    s_clean_queue_count = 0;
-                    return 0;
-                }
-            }
-
-            // Congestion recovery:
-            // Require 600 consecutive clean frames (~3 seconds) to restore target bitrate
-            if (s_current_bitrate_idx != s_target_high_bitrate && s_clean_queue_count >= 600) {
-                LOGI("lhdcBT_adjust_bitrate: queue healthy for %u frames -> restoring to target index %u",
-                     s_clean_queue_count, s_target_high_bitrate);
-                s_current_bitrate_idx = s_target_high_bitrate;
-                if (fn_lhdcv5BT_set_bitrate) {
-                    fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
-                }
-                s_clean_queue_count = 0;
-            }
-        }
-    }
+    (void)handle;
+    (void)queueLen;
+    // Hard-locked at 1000 kbps (Uncapped): Downscaling and ABR are permanently disabled!
     return 0;
 }
 
