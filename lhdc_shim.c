@@ -117,9 +117,9 @@ static uint32_t get_congestion_threshold() {
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_max_queue", prop) > 0) {
         int val = atoi(prop);
-        if (val >= 5 && val <= 115) return (uint32_t)val;
+        if (val >= 20 && val <= 100) return (uint32_t)val;
     }
-    return 105; // Default 105 packets (Fluoride max is 120; absorbs normal transient RF hiccups)
+    return 80; // Default 80 packets (40-packet safety cushion before Fluoride's 120 limit)
 }
 
 __attribute__((visibility("default")))
@@ -216,11 +216,11 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     uint32_t threshold = get_congestion_threshold();
 
     // Congestion downscale:
-    // Only downscale if queue exceeds threshold (default 105, Fluoride max is 120).
+    // Only downscale if queue exceeds threshold (default 80, giving 40 packets safety cushion before Fluoride 120).
     if (queueLen > threshold) {
         s_congested_count++;
-        // Require 10 consecutive congested frames (~50ms sustained backlog)
-        if (s_congested_count >= 10) {
+        // Require 3 consecutive congested frames (~15ms) to react before Fluoride buffer limit is reached
+        if (s_congested_count >= 3) {
             if (s_current_bitrate_idx != 6) {
                 LOGW("lhdcBT_adjust_bitrate: queue persistently congested (len=%u > %u, count=%u) -> downscaling to 500 kbps",
                      queueLen, threshold, s_congested_count);

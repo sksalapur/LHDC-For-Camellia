@@ -58,8 +58,8 @@ $RESETPROP persist.bluetooth.lhdc_bitrate 1000 2>/dev/null
 $RESETPROP -n persist.bluetooth.lhdc_mtu 660
 $RESETPROP persist.bluetooth.lhdc_mtu 660 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_max_queue 24
-$RESETPROP persist.bluetooth.lhdc_max_queue 24 2>/dev/null
+$RESETPROP -n persist.bluetooth.lhdc_max_queue 80
+$RESETPROP persist.bluetooth.lhdc_max_queue 80 2>/dev/null
 
 # Ensure overlay is active
 OVERLAY_TARGET="/product/overlay/AospBluetoothResOverlay.apk"
