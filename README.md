@@ -17,7 +17,7 @@ This project delivers:
 1. **The Native Translation Shim (`lhdc_shim.c`)**: Bridges Android's LHDC V3 Bluetooth stack to the modern Savitech LHDC V5 encoder ABI (`liblhdcv5BT_enc.so`), with a dedicated 900 kbps stream engine that eliminates packet batching starvation and diaphragm popping.
 2. **Native Bluetooth JNI SCMS-T DRM Bypass (`patch_jni_v8.py`)**: Neutralizes Xiaomi's proprietary Content Protection check in `FindPeerSink`.
 3. **MIUI Bluetooth Framework Smali Patcher (`patch_dex_u0.py`)**: Removes the Xiaomi-only device whitelist and fixes a Dalvik sign-extension bug that prevented automated codec restoration when earbuds connect from their charging case.
-4. **Ready-to-Flash Module (`lhdc_camellia_enabler.zip`)**: A comprehensive APatch / Magisk / KernelSU module that cleanly bind-mounts patched system files, APEX libraries, and properties.
+4. **Ready-to-Flash Module (`LHDC-for-Camellia.zip`)**: A comprehensive APatch / Magisk / KernelSU module that cleanly bind-mounts patched system files, APEX libraries, and properties.
 
 ---
 
@@ -125,10 +125,7 @@ LHDC-For-Camellia/
 │   └── system.prop                       # Prop defaults (persist.bluetooth.lhdc_codec.enabled)
 ├── lhdc_shim.c                           # Source for liblhdcBT_enc.so translation shim
 ├── package_zip.py                        # Python utility to build flashable module zip
-├── patch_dex_u0.py                       # Bytecode patcher for MiuiBluetooth.apk
-├── patch_jni_v8.py                       # Binary patcher for libbluetooth_jni.so
-├── rebuild_miui_bt_apk.py                # Zipalign & repackager for system APKs
-├── lhdc_camellia_enabler.zip             # Ready-to-flash APatch/Magisk module archive
+├── LHDC-for-Camellia.zip                 # Ready-to-flash APatch/Magisk module archive
 ├── LHDC_CAMELLIA_MASTER_DOCUMENTATION.md # Exhaustive master engineering documentation
 ├── README.md                             # Project overview & documentation
 └── .gitignore                            # Clean repository ignore rules
@@ -144,10 +141,10 @@ LHDC-For-Camellia/
 - Root access via **APatch** (recommended), **Magisk** (v25+), or **KernelSU**.
 
 ### Flashing via Magisk / APatch
-1. Download [`lhdc_camellia_enabler.zip`](lhdc_camellia_enabler.zip).
+1. Download [`LHDC-for-Camellia.zip`](LHDC-for-Camellia.zip).
 2. Open **APatch** or **Magisk Manager**.
 3. Navigate to **Modules** -> **Install from storage**.
-4. Select `lhdc_camellia_enabler.zip` and confirm the installation.
+4. Select `LHDC-for-Camellia.zip` and confirm the installation.
 5. Reboot your device.
 
 ---

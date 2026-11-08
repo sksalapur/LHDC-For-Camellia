@@ -13,5 +13,5 @@ def make_zip(source_dir, output_zip):
                 print(f"Added: {arcname}")
 
 if __name__ == '__main__':
-    make_zip('module', 'lhdc_camellia_enabler.zip')
-    print("Done packaging lhdc_camellia_enabler.zip")
+    make_zip('module', 'LHDC-for-Camellia.zip')
+    print("Done packaging LHDC-for-Camellia.zip")

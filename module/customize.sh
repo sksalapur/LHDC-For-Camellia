@@ -4,6 +4,8 @@ ui_print "- Installing LHDC & LHDC V5 Codec Libraries..."
 set_perm_recursive "$MODPATH" 0 0 0755 0644
 set_perm_recursive "$MODPATH/system/lib64" 0 0 0755 0644
 set_perm_recursive "$MODPATH/system/lib" 0 0 0755 0644
+chmod 0755 "$MODPATH/post-fs-data.sh" 2>/dev/null || true
+chmod 0755 "$MODPATH/service.sh" 2>/dev/null || true
 
 ui_print "- Preparing APEX overlay directory..."
 APEX_LIB64="$MODPATH/apex_lib64"

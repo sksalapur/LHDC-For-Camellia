@@ -83,7 +83,7 @@ vdex_test
 /*.so
 /*.jar
 /*.zip
-!/lhdc_camellia_enabler.zip
+!/LHDC-for-Camellia.zip
 /*.jar
 
 # IDE & Editor files

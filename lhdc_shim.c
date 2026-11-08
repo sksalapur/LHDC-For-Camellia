@@ -3,7 +3,6 @@
 #include <string.h>
 #include <dlfcn.h>
 #include <android/log.h>
-#include <sys/system_properties.h>
 
 #define LOG_TAG "LHDC_V5_SHIM"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -34,14 +33,15 @@ static void *g_v5_dsp_lib = NULL;
 static bool init_v5_lib(void) {
     if (g_v5_lib) return true;
     
-    // First, preload liblhdcv5.so with RTLD_GLOBAL so its symbols are available for DT_NEEDED
+    // Preload liblhdcv5.so with RTLD_GLOBAL so symbols are resolved
     const char *dsp_paths[] = {
         "/apex/com.android.btservices/lib64/liblhdcv5.so",
+        "/data/adb/modules/lhdc_codec_old/apex_lib64/liblhdcv5.so",
         "/data/adb/modules/lhdc_codec_support/apex_lib64/liblhdcv5.so",
         "liblhdcv5.so",
         "/system/lib64/liblhdcv5.so"
     };
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         g_v5_dsp_lib = dlopen(dsp_paths[i], RTLD_NOW | RTLD_GLOBAL);
         if (g_v5_dsp_lib) {
             LOGI("Preloaded liblhdcv5.so from: %s", dsp_paths[i]);
@@ -52,15 +52,16 @@ static bool init_v5_lib(void) {
         LOGW("Warning: could not preload liblhdcv5.so: %s", dlerror());
     }
 
-    // Now load liblhdcv5BT_enc.so
+    // Load liblhdcv5BT_enc.so
     const char *enc_paths[] = {
         "/apex/com.android.btservices/lib64/liblhdcv5BT_enc.so",
+        "/data/adb/modules/lhdc_codec_old/apex_lib64/liblhdcv5BT_enc.so",
         "/data/adb/modules/lhdc_codec_support/apex_lib64/liblhdcv5BT_enc.so",
         "liblhdcv5BT_enc.so",
         "/system/lib64/liblhdcv5BT_enc.so"
     };
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
         g_v5_lib = dlopen(enc_paths[i], RTLD_NOW);
         if (g_v5_lib) {
             LOGI("Loaded LHDC V5 encoder library from: %s", enc_paths[i]);
@@ -98,18 +99,18 @@ static bool init_v5_lib(void) {
 }
 
 // Global settings
-static uint32_t g_sample_rate = 48000;
+static uint32_t g_sample_rate = 96000;
 static uint32_t g_bits = 24;
 static uint32_t g_mtu = 600;
-static uint32_t g_block_size = 240;
-static uint32_t g_bytes_per_frame = 1440;
+static uint32_t g_block_size = 480;
+static uint32_t g_bytes_per_frame = 2880;
 static uint32_t s_target_high_bitrate = 7; // Default 900 kbps (HIGH)
 static uint32_t s_current_bitrate_idx = 7;
 static uint32_t s_clean_queue_count = 0;
 
 __attribute__((visibility("default")))
 HANDLE_LHDC_BT lhdcBT_get_handle(uint32_t version) {
-    LOGI("lhdcBT_get_handle: caller requested version=%u -> bridging to V5", version);
+    LOGI("lhdcBT_get_handle: caller requested version=%u -> bridging to V5 (version=1)", version);
     if (!init_v5_lib()) return NULL;
     HANDLE_LHDCV5_BT handle = NULL;
     int32_t ret = fn_lhdcv5BT_get_handle(1, &handle);
@@ -128,18 +129,15 @@ int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
     return fn_lhdcv5BT_free_handle((HANDLE_LHDCV5_BT)handle);
 }
 
-static uint32_t map_bitrate_to_v5(int bitrate_inx) {
+#include <sys/system_properties.h>
+
+static uint32_t map_v3_to_v5_bitrate(int bitrate_inx) {
     char prop[92] = {0};
     if (__system_property_get("persist.bluetooth.lhdc_bitrate", prop) > 0) {
-        if (strcmp(prop, "500") == 0) return 6;
-        if (strcmp(prop, "900") == 0) return 7;
         if (strcmp(prop, "1000") == 0) return 8;
+        if (strcmp(prop, "900") == 0) return 7;
+        if (strcmp(prop, "500") == 0) return 6;
     }
-    // V5 bitrate indexes:
-    // 5 = 400 kbps (LOW)    - batches at MTU 600 (2*252=504 <= 600) -> safely promote to 6 (500k)
-    // 6 = 500 kbps (MID)    - MTU 600 single-frame (2*314=628 > 600) -> 314 bytes, 0 batching, 0 underruns
-    // 7 = 900 kbps (HIGH)   - MTU 600 single-frame (2*564=1128 > 600) -> 564 bytes, 0 batching, 0 underruns
-    // 8 = 1000 kbps (HIGH1) - 626 bytes exceeds MTU 600 -> safely map to 7 (900k)
     if (bitrate_inx == 1 || bitrate_inx == 5 || bitrate_inx == 6) return 6;
     return 7; // Default 900 kbps
 }
@@ -159,16 +157,16 @@ int32_t lhdcBT_set_bitrate(HANDLE_LHDC_BT handle, int bitrate_inx) {
     LOGI("lhdcBT_set_bitrate: caller requested index=%d", bitrate_inx);
     if (!handle || !init_v5_lib()) return -1;
 
-    uint32_t target_br = map_bitrate_to_v5(bitrate_inx);
-    s_target_high_bitrate = target_br;
-    s_current_bitrate_idx = target_br;
+    uint32_t v5_br = map_v3_to_v5_bitrate(bitrate_inx);
+    s_target_high_bitrate = v5_br;
+    s_current_bitrate_idx = v5_br;
     s_clean_queue_count = 0;
 
     if (fn_lhdcv5BT_set_max_bitrate) {
-        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
+        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
     }
-    int32_t ret = fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
-    LOGI("lhdcBT_set_bitrate: set to index %u -> ret=%d", target_br, ret);
+    int32_t ret = fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
+    LOGI("lhdcBT_set_bitrate: set V5 target index %u -> ret=%d", v5_br, ret);
     return ret;
 }
 
@@ -177,31 +175,28 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
     LOGI("lhdcBT_set_max_bitrate: caller requested max=%u", max_bitrate_inx);
     if (!handle || !init_v5_lib()) return -1;
 
-    uint32_t target_br = map_bitrate_to_v5((int)max_bitrate_inx);
-    s_target_high_bitrate = target_br;
-    s_current_bitrate_idx = target_br;
+    uint32_t max_br = map_v3_to_v5_bitrate((int)max_bitrate_inx);
+    s_target_high_bitrate = max_br;
+    s_current_bitrate_idx = max_br;
     s_clean_queue_count = 0;
 
     if (fn_lhdcv5BT_set_max_bitrate) {
-        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
+        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
     }
-    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, target_br);
+    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
 }
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
-    // Fluoride's TxQueue buffer has a maximum capacity of 28 packets.
-    // In normal operation, Fluoride batches 4 packets per 20ms tick, so queueLen
-    // routinely reaches 3 or 4 before baseband transmission.
-    // Emergency congestion relief is only necessary if queueLen > 18 (approaching the 28 packet drop limit).
-    // Downscaling on queueLen > 2 was causing the encoder to bounce between 900k and 500k
-    // every 2 seconds, which forced the earbud DSP to reset frame quantization tables
-    // and produce subtle acoustic diaphragm pops.
-    if (queueLen > 18) {
+    // Dynamic queue congestion relief:
+    // If Fluoride queue reaches > 3 (e.g. during AVRCP volume event or RF retransmission),
+    // immediately downscale to 500 kbps (index 6, 314 bytes/frame) to drain the queue in <20ms
+    // and permanently prevent the 28-packet overflow limit from dropping packets.
+    if (queueLen > 3) {
         if (s_current_bitrate_idx != 6) {
-            LOGW("lhdcBT_adjust_bitrate: emergency congestion relief (len=%u) -> downscaling to 500 kbps", queueLen);
+            LOGW("lhdcBT_adjust_bitrate: queue congested (len=%u) -> downscaling to 500 kbps", queueLen);
             s_current_bitrate_idx = 6;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
@@ -210,10 +205,16 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
         s_clean_queue_count = 0;
     } else if (queueLen == 0) {
         s_clean_queue_count++;
-        // Require 1000 clean frames (approx 2.5 seconds of sustained 0-queue)
-        // before recovering to high bitrate, completely preventing rapid gear oscillations.
-        if (s_clean_queue_count >= 1000 && s_current_bitrate_idx != s_target_high_bitrate) {
-            LOGI("lhdcBT_adjust_bitrate: queue stable -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
+        // When queue has stayed completely clear for 100 consecutive frames (~2 seconds),
+        // restore target high bitrate if allowed by system property.
+        if (s_clean_queue_count >= 100 && s_current_bitrate_idx != s_target_high_bitrate) {
+            uint32_t allowed_target = map_v3_to_v5_bitrate(0);
+            if (allowed_target == 6) {
+                s_target_high_bitrate = 6;
+                s_current_bitrate_idx = 6;
+                return 0;
+            }
+            LOGI("lhdcBT_adjust_bitrate: queue cleared -> recovering to %u kbps", (s_target_high_bitrate == 7) ? 900 : 1000);
             s_current_bitrate_idx = s_target_high_bitrate;
             if (fn_lhdcv5BT_set_bitrate) {
                 fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
@@ -228,26 +229,24 @@ __attribute__((visibility("default")))
 int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_t bits_per_sample,
                             uint32_t bitrate_inx, uint32_t arg4, uint32_t arg5,
                             uint32_t arg6, uint32_t arg7) {
-    uint32_t mtu = 660;
+    uint32_t mtu = 665;
     uint32_t interval = 20;
 
     if (arg6 >= 300) {
-        // 8-argument signature: arg4=dualChannel, arg5=need_padding, arg6=mtu, arg7=interval
         mtu = arg6;
         interval = arg7;
     } else if (arg4 >= 300) {
-        // 6-argument signature: arg4=mtu, arg5=interval
         mtu = arg4;
         interval = arg5;
     }
 
-    LOGI("lhdcBT_init_encoder: sr=%u, bits=%u, br_inx=%u, mtu=%u, interval=%u (args: %u,%u,%u,%u)", 
-         sample_rate, bits_per_sample, bitrate_inx, mtu, interval, arg4, arg5, arg6, arg7);
+    LOGI("lhdcBT_init_encoder: sr=%u, bits=%u, br_inx=%u, mtu=%u, interval=%u", 
+         sample_rate, bits_per_sample, bitrate_inx, mtu, interval);
     if (!handle || !init_v5_lib()) return -1;
 
     if (sample_rate != 44100 && sample_rate != 48000 && sample_rate != 96000) {
-        LOGW("Non-standard sample_rate=%u, defaulting to 48000", sample_rate);
-        sample_rate = 48000;
+        LOGW("Non-standard sample_rate=%u, defaulting to 96000", sample_rate);
+        sample_rate = 96000;
     }
     if (bits_per_sample != 16 && bits_per_sample != 24) {
         LOGW("Non-standard bits=%u, defaulting to 24", bits_per_sample);
@@ -264,7 +263,7 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
     // This permanently prevents receiver buffer starvation and eliminates diaphragm plastic movement noise.
     g_mtu = 600;
 
-    uint32_t v5_br = map_bitrate_to_v5((int)bitrate_inx);
+    uint32_t v5_br = map_v3_to_v5_bitrate((int)bitrate_inx);
     s_target_high_bitrate = v5_br;
     s_current_bitrate_idx = v5_br;
     s_clean_queue_count = 0;
@@ -282,9 +281,9 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
         fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
     }
 
-    uint32_t samples = 240;
+    uint32_t samples = 0;
     fn_lhdcv5BT_get_block_Size((HANDLE_LHDCV5_BT)handle, &samples);
-    g_block_size = samples ? samples : 240;
+    g_block_size = samples ? samples : (sample_rate >= 96000 ? 480 : 240);
 
     uint32_t bytes_per_sample = (bits_per_sample / 8) * 2;
     g_bytes_per_frame = g_block_size * bytes_per_sample;
@@ -295,10 +294,11 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
 
 __attribute__((visibility("default")))
 int lhdcBT_get_block_Size(HANDLE_LHDC_BT handle) {
-    if (!handle || !init_v5_lib()) return 240;
-    uint32_t samples = 240;
+    if (!handle || !init_v5_lib()) return (int)g_block_size;
+    uint32_t samples = 0;
     fn_lhdcv5BT_get_block_Size((HANDLE_LHDCV5_BT)handle, &samples);
-    return (int)samples;
+    if (samples) g_block_size = samples;
+    return (int)g_block_size;
 }
 
 __attribute__((visibility("default")))
@@ -343,7 +343,8 @@ int lhdcBT_encodeV3(HANDLE_LHDC_BT handle, void* p_pcm, unsigned char* out_put, 
 __attribute__((visibility("default")))
 int lhdcBT_encode(HANDLE_LHDC_BT handle, void* p_pcm, unsigned char* p_stream) {
     uint32_t written = 0, out_frames = 0;
-    return lhdcBT_encodeV3(handle, p_pcm, p_stream, &written, &out_frames);
+    lhdcBT_encodeV3(handle, p_pcm, p_stream, &written, &out_frames);
+    return (int)written;
 }
 
 __attribute__((visibility("default")))

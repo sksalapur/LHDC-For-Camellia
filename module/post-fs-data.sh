@@ -10,7 +10,9 @@ if [ -f "$OVERLAY_PATCHED" ] && [ -f "$OVERLAY_TARGET" ]; then
     mount --bind "$OVERLAY_PATCHED" "$OVERLAY_TARGET"
 fi
 
-# Overlay target
+# Note: MiuiBluetooth.apk is intentionally NOT mounted in post-fs-data.sh.
+# Mounting here causes Android PackageManagerService to drop com.xiaomi.bluetooth on boot due to signature check.
+# It is mounted late in service.sh after PMS scans the authentic system APK.
 
 # Directory bind-mount for APEX lib64 (includes JNI, shim, and all V5 libs)
 APEX_LIB64="$MODDIR/apex_lib64"

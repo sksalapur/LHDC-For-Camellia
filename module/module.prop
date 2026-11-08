@@ -1,6 +1,6 @@
-id=lhdc_codec_support
-name=LHDC & LHDCv5 Bluetooth Audio Codec Support
-version=v1.0
-versionCode=100
-author=Antigravity
-description=Enables LHDC & LHDCv5 Bluetooth Hi-Res audio codec support, installs Savitech libraries, configures audio policy and codec priority properties for Xiaomi Camellia / MediaTek.
+id=lhdc_codec_old
+name=LHDC Codec Old Implementation
+version=v1.0-Initial
+versionCode=1
+author=SKSALAPUR & Antigravity
+description=Initial minimal working LHDC v3/v5 implementation for Camellia (ABR auto mode).

@@ -36,8 +36,6 @@ $RESETPROP persist.vendor.bluetooth.lhdc_abr true 2>/dev/null
 $RESETPROP -n vendor.bluetooth.lhdc.abr true
 $RESETPROP vendor.bluetooth.lhdc.abr true 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
-$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
 
 $RESETPROP -n bluetooth.a2dp.source.lhdcv2_priority.config 8001
 $RESETPROP bluetooth.a2dp.source.lhdcv2_priority.config 8001 2>/dev/null
@@ -51,6 +49,12 @@ $RESETPROP bluetooth.a2dp.source.lhdcv5_priority.config 8003 2>/dev/null
 $RESETPROP -n persist.bluetooth.a2dp_offload.disabled false
 $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 
+$RESETPROP -n persist.bluetooth.disableabsvol false
+$RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
+
+$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
+$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
+
 # Ensure overlay is active
 OVERLAY_TARGET="/product/overlay/AospBluetoothResOverlay.apk"
 OVERLAY_PATCHED="$MODDIR/work/AospBluetoothResOverlay.apk"
@@ -58,12 +62,11 @@ if [ -f "$OVERLAY_PATCHED" ] && [ -f "$OVERLAY_TARGET" ]; then
     mount --bind "$OVERLAY_PATCHED" "$OVERLAY_TARGET" 2>/dev/null
 fi
 
-# Overlay active
+NEED_RESTART=0
 
 # Ensure APEX lib64 directory mount is active
 APEX_LIB64="$MODDIR/apex_lib64"
 if [ -d "$APEX_LIB64" ]; then
-    NEED_RESTART=0
     for TARGET in /apex/com.android.btservices/lib64 /apex/com.android.btservices@*/lib64; do
         if [ -d "$TARGET" ]; then
             if ! grep -q "$TARGET" /proc/mounts; then
@@ -115,6 +118,3 @@ if [ "$NEED_RESTART" -eq 1 ]; then
     am force-stop com.xiaomi.bluetooth 2>/dev/null || killall -9 com.xiaomi.bluetooth 2>/dev/null
     am force-stop com.android.bluetooth 2>/dev/null || killall -9 com.android.bluetooth 2>/dev/null
 fi
-
-
-
