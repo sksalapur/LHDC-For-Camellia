@@ -101,11 +101,11 @@ static bool init_v5_lib(void) {
 }
 
 // Global settings
-static uint32_t g_sample_rate = 96000;
+static uint32_t g_sample_rate = 48000;
 static uint32_t g_bits = 24;
-static uint32_t g_mtu = 600;
-static uint32_t g_block_size = 480;
-static uint32_t g_bytes_per_frame = 2880;
+static uint32_t g_mtu = 660;
+static uint32_t g_block_size = 240;
+static uint32_t g_bytes_per_frame = 1440;
 static uint32_t s_target_high_bitrate = 6; // Default 500 kbps (MID - rock-solid 96k/24b @ MTU 600)
 static uint32_t s_last_configured_target = 6;
 static uint32_t s_current_bitrate_idx = 6;
@@ -291,8 +291,8 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
     if (!handle || !init_v5_lib()) return -1;
 
     if (sample_rate != 44100 && sample_rate != 48000 && sample_rate != 96000) {
-        LOGW("Non-standard sample_rate=%u, defaulting to 96000", sample_rate);
-        sample_rate = 96000;
+        LOGW("Non-standard sample_rate=%u, defaulting to 48000", sample_rate);
+        sample_rate = 48000;
     }
     if (bits_per_sample != 16 && bits_per_sample != 24) {
         LOGW("Non-standard bits=%u, defaulting to 24", bits_per_sample);
