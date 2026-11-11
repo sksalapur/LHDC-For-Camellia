@@ -259,6 +259,9 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
                     s_last_configured_target = new_target;
                     s_target_high_bitrate = new_target;
                     s_current_bitrate_idx = new_target;
+                    if (fn_lhdcv5BT_set_max_bitrate) {
+                        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
+                    }
                     if (fn_lhdcv5BT_set_bitrate) {
                         fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
                     }

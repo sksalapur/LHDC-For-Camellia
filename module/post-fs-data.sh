@@ -44,3 +44,17 @@ if [ -f "$SHIM_PATCHED" ]; then
         fi
     done
 fi
+
+# Bind-mount patched framework-bluetooth.jar before zygote loads BOOTCLASSPATH
+# so BluetoothCodecConfig.getCodecName() & BluetoothCodecType.getCodecName() expose
+# the true LHDC codec name on vendor codec slot 10/12 without hiddenapi blocking.
+FW_BT_PATCHED="$MODDIR/work/framework-bluetooth.jar"
+if [ -f "$FW_BT_PATCHED" ]; then
+    chmod 0644 "$FW_BT_PATCHED" 2>/dev/null || true
+    chcon u:object_r:system_file:s0 "$FW_BT_PATCHED" 2>/dev/null || true
+    for TARGET in /apex/com.android.btservices/javalib/framework-bluetooth.jar /apex/com.android.btservices@*/javalib/framework-bluetooth.jar; do
+        if [ -f "$TARGET" ]; then
+            mount --bind "$FW_BT_PATCHED" "$TARGET" 2>/dev/null || true
+        fi
+    done
+fi
