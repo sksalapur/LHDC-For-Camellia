@@ -1,6 +1,6 @@
 id=lhdc_codec_old
 name=LHDC Codec For Camellia
-version=v1.6-Stable
-versionCode=7
+version=v2.0
+versionCode=8
 author=SKSALAPUR & Antigravity
-description=LHDC v5 audiophile implementation for Camellia locked at 500 kbps @ MTU 660 (48kHz/24-bit, 2-frame batched + ABR, full LHDC codec name reporting).
+description=LHDC v5 audiophile implementation for Camellia (500/900/1000 kbps @ 660 MTU, dynamic ABR toggle, WebUI tuner & zero-crack launcher telemetry on port 9092).

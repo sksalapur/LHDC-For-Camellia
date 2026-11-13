@@ -20,7 +20,8 @@ This repository resolves the full end-to-end stack cleanly without app hooking o
 3. **MIUI Bluetooth Auto-Promotion Fix (`module/work/MiuiBluetooth.apk`)** — Removes Xiaomi's ecosystem MAC whitelist (`Method Q`), fixes a Dalvik signed-nibble bug (`Method U0` failing to restore vendor codec ID `10`), and widens the AVDTP SEP discovery timer from `1000 ms` to `3000 ms` so incoming case reconnects automatically promote from AAC to `LHDC_V3`.
 4. **Codec Resource Priority Overlay (`module/work/AospBluetoothResOverlay.apk`)** — Elevates LHDC priorities (`8003` / `8002` / `8001`) above LDAC (`5001`), aptX HD (`4001`), AAC (`2001`), and SBC (`1001`).
 5. **Android Framework Codec-Name & Extended Type Fix (`module/work/framework-bluetooth.jar`)** — Exposes true codec names (`"LHDC_V2"`, `"LHDC_V3"`, `"LHDC_V1"`, `"LHDC_V5"`) on vendor slots `9..12` via public `BluetoothCodecConfig.getCodecName()`, unblocked static `getCodecName(int)`, and backported `BluetoothCodecType` / `getExtendedCodecType()` APIs for Android 15+ (`targetSdk >= 35`) audio apps.
-6. **Ready-to-Flash Root Module ([`LHDC-for-Camellia.zip`](LHDC-for-Camellia.zip))** — Tested on **APatch** (with Hybrid Mount) and compatible with **Magisk** / **KernelSU**.
+6. **Integrated WebUI Tuner & Telemetry Daemon (`module/webroot/`, `module/scripts/server.sh`)** — Serves an audiophile WebUI (via APatch WebUI or `http://127.0.0.1:9092`) to switch bitrates on the fly (`500`, `900`, `1000` kbps @ 660 MTU) with zero Bluetooth restarts, an interactive Adaptive Bitrate (ABR) switch, and a zero-crack launcher telemetry endpoint (`/api/live`).
+7. **Ready-to-Flash Root Module ([`LHDC-for-Camellia.zip`](LHDC-for-Camellia.zip))** — Tested on **APatch** (with Hybrid Mount) and compatible with **Magisk** / **KernelSU**.
 
 ---
 
@@ -186,11 +187,77 @@ LHDC/
     │   ├── MiuiBluetooth.apk               # Whitelist + U0 codec ID 10 + 3000ms SEP delay patches
     │   ├── framework-bluetooth.jar         # Public getCodecName() & BluetoothCodecType for slots 9-12
     │   └── libbluetooth_jni.so             # SCMS-T bypass + 48 kHz caps + 120-pkt TX queue
+    ├── scripts/
+    │   └── server.sh                       # Pure-builtins HTTP daemon for WebUI & zero-fork /api/live
+    ├── webroot/
+    │   ├── index.html                      # Audiophile WebUI tuner & negotiated stream monitor
+    │   ├── style.css                       # Responsive glassmorphism dark theme
+    │   └── app.js                          # Real-time state polling & instant preset/ABR dispatcher
     ├── customize.sh                        # Flash-time APEX layout builder & permissions
     ├── module.prop                         # Module ID (lhdc_codec_old), version, description
     ├── post-fs-data.sh                     # Early pre-zygote mounts (framework jar, APEX lib64, overlay)
-    ├── service.sh                          # Late boot resetprop & MiuiBluetooth.apk bind mount
+    ├── service.sh                          # Late boot resetprop, background 9092 daemon, and bind mounts
     └── system.prop                         # Default LHDC/ABR/MTU properties
+```
+
+---
+
+## WebUI Tuner & Real-Time Telemetry (Port 9092)
+
+Starting with **v2.0**, the module includes an ultra-lightweight, persistent on-device HTTP server running on `127.0.0.1:9092` (also accessible directly within **APatch / KernelSU Manager WebUI**):
+
+### 1. On-the-Fly Bitrate Switching (No Bluetooth Restart)
+Switch between 3 curated bitrate tiers with **zero audio disruption and no Bluetooth stack restart**:
+- **500 kbps @ 660 MTU (`STABLE`)**: 2-frame packet batching (`100 pkt/s`). Lowest RF contention and maximum range.
+- **900 kbps @ 660 MTU (`HI-RES`)**: Single-frame unbatched (`~563 B` frame). Balanced studio fidelity.
+- **1000 kbps @ 660 MTU (`MAX`)**: Peak 1.0 Mbps stream (`626 B` frame). Maximum LHDC bandwidth ceiling.
+
+> [!NOTE]
+> **Why Bluetooth restart is NOT required**: Because the A2DP transport MTU is locked constant at `660` bytes across all tiers, both batched 500k frames (`2 × 313 B = 626 B`) and unbatched 900k/1000k frames fit inside the existing L2CAP channel without tearing down or reinitializing the Bluetooth connection. Changes are applied by `lhdc_shim.c` within ~100 ms while audio plays seamlessly.
+
+### 2. Interactive Adaptive Bitrate (ABR) Switch
+- **ABR ON**: Selected bitrate acts as the ceiling. If RF interference causes Fluoride's TX queue to exceed the congestion threshold (`80` packets), `lhdc_shim.c` steps down to safeguard audio integrity and automatically steps back up once the link recovers.
+- **ABR OFF (LOCKED)**: Strictly locks encoder bitrate to the selected preset (`500`, `900`, or `1000` kbps) without automatic downscaling.
+
+### 3. Real-Time Negotiated Stream Monitor
+The WebUI provides a real-time HUD displaying:
+- **Negotiated Bitrate**: True hardware bitrate actively encoded in DSP RAM (`500` / `900` / `1000` kbps).
+- **Negotiated MTU**: Transport frame size (`660`).
+- **Format / Codec**: `48k / 24b` `LHDC V5`.
+- **TX Queue**: Live hardware packet queue depth (`N / 80`).
+- **State Badges**: `STREAMING` vs `IDLE / PAUSED`, and `ABR ACTIVE` / `ABR STEPPED DOWN` / `ABR OFF (LOCKED)`.
+
+### 4. Zero-Crack Launcher Telemetry Endpoint
+Audiophile launchers (such as BitChord, DAP Launcher, or custom dashboards) can poll:
+```text
+GET http://127.0.0.1:9092/api/live
+```
+**Why this endpoint causes zero audio stutter**:
+Unlike legacy scripts that execute heavy command-line utilities (`dumpsys bluetooth_manager` or `logcat -d`) which interrupt Bluetooth audio real-time threads, `lhdc_shim.c` writes atomic state in-process to `/data/misc/bluetooth/lhdc_live.json`, and `server.sh` serves it using pure `mksh` shell builtins (**zero `dumpsys`, zero `logcat`, and zero subprocess forks**).
+
+Example response:
+```json
+{
+  "active": true,
+  "codec": "LHDC V5",
+  "negotiated_bitrate_kbps": 1000,
+  "target_bitrate_kbps": 1000,
+  "negotiated_mtu": 660,
+  "sample_rate": 48000,
+  "bits_per_sample": 24,
+  "bitrate_idx": 8,
+  "target_idx": 8,
+  "abr_enabled": false,
+  "abr_stepped_down": false,
+  "queue_len": 0,
+  "updated_at": 1794489146,
+  "configured_bitrate_kbps": 1000,
+  "configured_mtu": 660,
+  "configured_abr_enabled": false,
+  "bitrate": "1000 kbps",
+  "bitrate_kbps": 1000,
+  "mtu": 660
+}
 ```
 
 ---

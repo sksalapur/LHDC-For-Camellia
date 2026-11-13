@@ -30,11 +30,23 @@ $RESETPROP persist.vendor.bt.a2dp.lhdc true 2>/dev/null
 $RESETPROP -n ro.vendor.bt.a2dp.lhdc true
 $RESETPROP ro.vendor.bt.a2dp.lhdc true 2>/dev/null
 
-$RESETPROP -n persist.vendor.bluetooth.lhdc_abr true
-$RESETPROP persist.vendor.bluetooth.lhdc_abr true 2>/dev/null
+TARGET_ABR=true
+if [ -r "$MODDIR/target_abr" ]; then
+    IFS= read -r SAVED_ABR < "$MODDIR/target_abr" 2>/dev/null || SAVED_ABR=""
+    case "$SAVED_ABR" in
+        true|false) TARGET_ABR="$SAVED_ABR" ;;
+    esac
+fi
 
-$RESETPROP -n vendor.bluetooth.lhdc.abr true
-$RESETPROP vendor.bluetooth.lhdc.abr true 2>/dev/null
+if [ ! -r "$MODDIR/target_abr" ]; then
+    printf '%s\n' "$TARGET_ABR" > "$MODDIR/target_abr" 2>/dev/null || true
+fi
+
+$RESETPROP -n persist.vendor.bluetooth.lhdc_abr "$TARGET_ABR"
+$RESETPROP persist.vendor.bluetooth.lhdc_abr "$TARGET_ABR" 2>/dev/null
+
+$RESETPROP -n vendor.bluetooth.lhdc.abr "$TARGET_ABR"
+$RESETPROP vendor.bluetooth.lhdc.abr "$TARGET_ABR" 2>/dev/null
 
 
 $RESETPROP -n bluetooth.a2dp.source.lhdcv2_priority.config 8001
@@ -52,8 +64,21 @@ $RESETPROP persist.bluetooth.a2dp_offload.disabled false 2>/dev/null
 $RESETPROP -n persist.bluetooth.disableabsvol false
 $RESETPROP persist.bluetooth.disableabsvol false 2>/dev/null
 
-$RESETPROP -n persist.bluetooth.lhdc_bitrate 500
-$RESETPROP persist.bluetooth.lhdc_bitrate 500 2>/dev/null
+TARGET_BR=500
+if [ -r "$MODDIR/target_bitrate" ]; then
+    IFS= read -r SAVED_BR < "$MODDIR/target_bitrate" 2>/dev/null || SAVED_BR=""
+    SAVED_BR="${SAVED_BR%%[^0-9]*}"
+    case "$SAVED_BR" in
+        500|900|1000) TARGET_BR="$SAVED_BR" ;;
+    esac
+fi
+
+if [ ! -r "$MODDIR/target_bitrate" ]; then
+    printf '%s\n' "$TARGET_BR" > "$MODDIR/target_bitrate" 2>/dev/null || true
+fi
+
+$RESETPROP -n persist.bluetooth.lhdc_bitrate "$TARGET_BR"
+$RESETPROP persist.bluetooth.lhdc_bitrate "$TARGET_BR" 2>/dev/null
 
 $RESETPROP -n persist.bluetooth.lhdc_mtu 660
 $RESETPROP persist.bluetooth.lhdc_mtu 660 2>/dev/null
@@ -128,5 +153,20 @@ fi
 # Kill any lingering instances of port 9092 listener
 pkill -9 -f "9092 -L" 2>/dev/null || true
 pkill -9 -f "$MODDIR/scripts/server.sh" 2>/dev/null || true
+
+chmod 0755 "$MODDIR/scripts/server.sh" 2>/dev/null || true
+if [ -d /data/misc/bluetooth ]; then
+    chmod 0777 /data/misc/bluetooth 2>/dev/null || true
+fi
+
+# Start persistent WebUI & ultra-lightweight launcher telemetry server on 127.0.0.1:9092
+(
+    while true; do
+        if ! pgrep -f "9092 -L" >/dev/null 2>&1; then
+            nohup toybox nc -s 127.0.0.1 -p 9092 -L /system/bin/sh "$MODDIR/scripts/server.sh" </dev/null >/dev/null 2>&1 &
+        fi
+        sleep 5
+    done
+) </dev/null >/dev/null 2>&1 &
 
 exit 0

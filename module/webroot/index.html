@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LHDC Codec Monitor & Tuner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+
+    <header class="glass-card header-card">
+      <div>
+        <div class="brand-badge">LHDC V5 SHIM • LIVE TUNER & MONITOR</div>
+        <h1 class="header-title">LHDC Codec Tuner</h1>
+        <div class="header-sub">48 kHz / 24-bit • Fixed 660 MTU • Live Switch</div>
+      </div>
+      <span id="stream-pill" class="badge badge-dim">STANDBY</span>
+    </header>
+
+    <!-- Real-time Negotiated Monitor -->
+    <section class="glass-card">
+      <div class="section-title">
+        <span>Negotiated Stream Monitor</span>
+        <span id="abr-pill" class="badge badge-green">ABR ACTIVE</span>
+      </div>
+
+      <div class="monitor-grid">
+        <div class="stat-box">
+          <div class="stat-label">Negotiated Bitrate</div>
+          <div id="val-neg-br" class="stat-value accent-cyan">-- kbps</div>
+          <div id="sub-target-br" class="stat-sub">Target: -- kbps</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Negotiated MTU</div>
+          <div id="val-neg-mtu" class="stat-value accent-green">660</div>
+          <div id="sub-mtu-mode" class="stat-sub">Fixed 660 B</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Format / Codec</div>
+          <div id="val-format" class="stat-value">48k / 24b</div>
+          <div id="sub-codec" class="stat-sub">LHDC V5</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">TX Queue</div>
+          <div id="val-queue" class="stat-value">0 / 80</div>
+          <div id="sub-abr-state" class="stat-sub">Nominal</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 Bitrate Presets @ 660 MTU + ABR Toggle -->
+    <section class="glass-card">
+      <div class="section-title">
+        <span>Bitrate Selection (660 MTU)</span>
+        <span class="badge badge-cyan">No BT Restart</span>
+      </div>
+
+      <div class="abr-toggle-row">
+        <div class="abr-toggle-copy">
+          <div class="abr-toggle-title">Adaptive Bitrate (ABR)</div>
+          <div id="abr-toggle-desc" class="abr-toggle-desc">On: Dynamically steps down during RF congestion and recovers.</div>
+        </div>
+        <label class="switch" aria-label="Toggle Adaptive Bitrate">
+          <input type="checkbox" id="abr-switch" checked onchange="toggleAbr(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="preset-list" id="preset-list">
+        <button class="preset-card" data-br="500" onclick="applyBitrate(500)">
+          <div class="preset-main">
+            <div>
+              <div class="preset-title">500 kbps <span class="preset-mtu">@ 660 MTU</span></div>
+              <div class="preset-desc">2-frame batched (100 pkt/s) • Lowest RF load & longest range</div>
+            </div>
+            <span class="preset-badge badge-green">STABLE</span>
+          </div>
+        </button>
+
+        <button class="preset-card" data-br="900" onclick="applyBitrate(900)">
+          <div class="preset-main">
+            <div>
+              <div class="preset-title">900 kbps <span class="preset-mtu">@ 660 MTU</span></div>
+              <div class="preset-desc">Single-frame unbatched (~563 B) • Balanced Hi-Res fidelity</div>
+            </div>
+            <span class="preset-badge badge-cyan">HI-RES</span>
+          </div>
+        </button>
+
+        <button class="preset-card" data-br="1000" onclick="applyBitrate(1000)">
+          <div class="preset-main">
+            <div>
+              <div class="preset-title">1000 kbps <span class="preset-mtu">@ 660 MTU</span></div>
+              <div class="preset-desc">Peak 1.0 Mbps stream (626 B frame) • Maximum LHDC bitrate</div>
+            </div>
+            <span class="preset-badge badge-amber">MAX</span>
+          </div>
+        </button>
+      </div>
+    </section>
+
+    <!-- Launcher Live Endpoint Info -->
+    <section class="glass-card endpoint-card">
+      <div class="section-title">
+        <span>Launcher Telemetry Endpoint</span>
+        <button class="btn-mini" onclick="copyEndpoint()">Copy URL</button>
+      </div>
+      <code id="endpoint-url" class="endpoint-url">http://127.0.0.1:9092/api/live</code>
+      <div class="endpoint-note">
+        Reads cached in-process encoder telemetry directly (zero <code>dumpsys</code> / <code>logcat</code> calls) so polling never interrupts playback.
+      </div>
+    </section>
+
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

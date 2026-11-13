@@ -1,8 +1,13 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/stat.h>
 #include <sys/system_properties.h>
 #include <android/log.h>
 
@@ -112,6 +117,104 @@ static uint32_t s_current_bitrate_idx = 6;
 static uint32_t s_clean_queue_count = 0;
 static uint32_t s_congested_count = 0;
 static uint32_t s_warmup_frames = 0;
+static uint32_t s_poll_ticks = 0;
+
+#define LHDC_LIVE_TMP  "/data/misc/bluetooth/.lhdc_live.tmp"
+#define LHDC_LIVE_PATH "/data/misc/bluetooth/lhdc_live.json"
+
+static uint32_t idx_to_kbps(uint32_t idx) {
+    switch (idx) {
+        case 8: return 1000;
+        case 7: return 900;
+        case 6: return 500;
+        case 5: return 400;
+        case 4: return 320;
+        default: return 500;
+    }
+}
+
+static bool read_abr_enabled(void) {
+    char abr_prop[92] = {0};
+    if (__system_property_get("persist.vendor.bluetooth.lhdc_abr", abr_prop) > 0 ||
+        __system_property_get("vendor.bluetooth.lhdc.abr", abr_prop) > 0) {
+        if (strcmp(abr_prop, "false") == 0 || strcmp(abr_prop, "0") == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void publish_live_state(HANDLE_LHDCV5_BT handle, bool active, uint32_t queue_len, bool abr_enabled, bool force) {
+    static bool     s_prev_active = false;
+    static uint32_t s_prev_kbps = 0;
+    static uint32_t s_prev_idx = 99;
+    static uint32_t s_prev_target = 99;
+    static uint32_t s_prev_mtu = 0;
+    static bool     s_prev_abr = true;
+    static time_t   s_prev_ts = 0;
+
+    time_t now = time(NULL);
+    uint32_t neg_kbps = idx_to_kbps(s_current_bitrate_idx);
+    if (active && handle && fn_lhdcv5BT_get_bitrate) {
+        uint32_t br = 0;
+        if (fn_lhdcv5BT_get_bitrate(handle, &br) == 0 && br > 0) {
+            neg_kbps = (br >= 10000) ? (br / 1000) : br;
+        }
+    } else if (!active) {
+        neg_kbps = 0;
+    }
+
+    bool changed = force ||
+                   (active != s_prev_active) ||
+                   (neg_kbps != s_prev_kbps) ||
+                   (s_current_bitrate_idx != s_prev_idx) ||
+                   (s_target_high_bitrate != s_prev_target) ||
+                   (g_mtu != s_prev_mtu) ||
+                   (abr_enabled != s_prev_abr);
+
+    if (!changed) {
+        // Rate-limit heartbeat refreshes to <= 1 Hz so audio thread does near-zero I/O
+        if ((now - s_prev_ts) < 1) return;
+    }
+
+    char buf[384];
+    int n = snprintf(buf, sizeof(buf),
+        "{\"active\":%s,\"codec\":\"LHDC V5\",\"negotiated_bitrate_kbps\":%u,\"target_bitrate_kbps\":%u,"
+        "\"negotiated_mtu\":%u,\"sample_rate\":%u,\"bits_per_sample\":%u,\"bitrate_idx\":%u,\"target_idx\":%u,"
+        "\"abr_enabled\":%s,\"abr_stepped_down\":%s,\"queue_len\":%u,\"updated_at\":%lld}\n",
+        active ? "true" : "false",
+        neg_kbps,
+        idx_to_kbps(s_target_high_bitrate),
+        g_mtu,
+        g_sample_rate,
+        g_bits,
+        s_current_bitrate_idx,
+        s_target_high_bitrate,
+        abr_enabled ? "true" : "false",
+        (active && s_current_bitrate_idx < s_target_high_bitrate) ? "true" : "false",
+        queue_len,
+        (long long)now);
+
+    if (n <= 0 || n >= (int)sizeof(buf)) return;
+
+    int fd = open(LHDC_LIVE_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd >= 0) {
+        ssize_t w = write(fd, buf, (size_t)n);
+        close(fd);
+        if (w == n) {
+            chmod(LHDC_LIVE_TMP, 0644);
+            rename(LHDC_LIVE_TMP, LHDC_LIVE_PATH);
+        }
+    }
+
+    s_prev_active = active;
+    s_prev_kbps = neg_kbps;
+    s_prev_idx = s_current_bitrate_idx;
+    s_prev_target = s_target_high_bitrate;
+    s_prev_mtu = g_mtu;
+    s_prev_abr = abr_enabled;
+    s_prev_ts = now;
+}
 
 static uint32_t get_congestion_threshold() {
     char prop[92] = {0};
@@ -139,6 +242,7 @@ HANDLE_LHDC_BT lhdcBT_get_handle(uint32_t version) {
 __attribute__((visibility("default")))
 int32_t lhdcBT_free_handle(HANDLE_LHDC_BT handle) {
     LOGI("lhdcBT_free_handle: handle=%p", handle);
+    publish_live_state(NULL, false, 0, read_abr_enabled(), true);
     if (!handle || !init_v5_lib()) return 0;
     return fn_lhdcv5BT_free_handle((HANDLE_LHDCV5_BT)handle);
 }
@@ -182,6 +286,7 @@ int32_t lhdcBT_set_bitrate(HANDLE_LHDC_BT handle, int bitrate_inx) {
     }
     int32_t ret = fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, v5_br);
     LOGI("lhdcBT_set_bitrate: set V5 target index %u -> ret=%d", v5_br, ret);
+    publish_live_state((HANDLE_LHDCV5_BT)handle, true, 0, read_abr_enabled(), true);
     return ret;
 }
 
@@ -200,32 +305,72 @@ int32_t lhdcBT_set_max_bitrate(HANDLE_LHDC_BT handle, uint32_t max_bitrate_inx) 
     if (fn_lhdcv5BT_set_max_bitrate) {
         fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
     }
-    return fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
+    int32_t ret = fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, max_br);
+    publish_live_state((HANDLE_LHDCV5_BT)handle, true, 0, read_abr_enabled(), true);
+    return ret;
+}
+
+static bool     s_abr_enabled = true;
+static uint32_t s_last_queue_len = 0;
+
+static bool sync_target_and_abr(HANDLE_LHDCV5_BT handle, uint32_t queue_len) {
+    bool prev_abr = s_abr_enabled;
+    s_abr_enabled = read_abr_enabled();
+    uint32_t new_target = map_v3_to_v5_bitrate(0);
+
+    if (new_target != s_last_configured_target ||
+        (!s_abr_enabled && s_current_bitrate_idx != new_target)) {
+        LOGI("sync_target_and_abr: target/abr update: target %u -> %u (cur=%u, abr=%d)",
+             s_last_configured_target, new_target, s_current_bitrate_idx, s_abr_enabled ? 1 : 0);
+        s_last_configured_target = new_target;
+        s_target_high_bitrate = new_target;
+        s_current_bitrate_idx = new_target;
+        if (fn_lhdcv5BT_set_max_bitrate) {
+            fn_lhdcv5BT_set_max_bitrate(handle, new_target);
+        }
+        if (fn_lhdcv5BT_set_bitrate) {
+            fn_lhdcv5BT_set_bitrate(handle, new_target);
+        }
+        s_clean_queue_count = 0;
+        s_congested_count = 0;
+        publish_live_state(handle, true, queue_len, s_abr_enabled, true);
+        return true;
+    }
+
+    if (s_abr_enabled != prev_abr) {
+        LOGI("sync_target_and_abr: ABR toggled -> %s", s_abr_enabled ? "ENABLED" : "DISABLED");
+        publish_live_state(handle, true, queue_len, s_abr_enabled, true);
+    }
+    return false;
 }
 
 __attribute__((visibility("default")))
 int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
     if (!handle || !init_v5_lib()) return -1;
 
-    // Check if ABR is enabled via system property
-    char abr_prop[92] = {0};
-    bool abr_enabled = true;
-    if (__system_property_get("persist.vendor.bluetooth.lhdc_abr", abr_prop) > 0 ||
-        __system_property_get("vendor.bluetooth.lhdc.abr", abr_prop) > 0) {
-        if (strcmp(abr_prop, "false") == 0 || strcmp(abr_prop, "0") == 0) {
-            abr_enabled = false;
+    s_last_queue_len = queueLen;
+    s_poll_ticks++;
+
+    // Poll user target bitrate & ABR flag on first tick and every 20 ticks (~100ms)
+    if (s_poll_ticks == 1 || (s_poll_ticks % 20) == 0) {
+        if (sync_target_and_abr((HANDLE_LHDCV5_BT)handle, queueLen)) {
+            return 0;
         }
     }
 
-    // Skip adjustment during initial connection warmup (2000 frames ~ 10 sec)
+    // Skip ABR congestion downscaling during initial connection warmup (2000 frames ~ 10 sec)
     if (s_warmup_frames < 2000) {
         s_warmup_frames++;
+        if ((s_poll_ticks % 200) == 0) {
+            publish_live_state((HANDLE_LHDCV5_BT)handle, true, queueLen, s_abr_enabled, false);
+        }
         return 0;
     }
 
     uint32_t threshold = get_congestion_threshold();
+    bool state_changed = false;
 
-    if (abr_enabled && queueLen > threshold) {
+    if (s_abr_enabled && queueLen > threshold) {
         s_congested_count++;
         // 5 consecutive congested frames to filter transient radio multiplexing spikes
         if (s_congested_count >= 5) {
@@ -236,6 +381,7 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
                 if (fn_lhdcv5BT_set_bitrate) {
                     fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 6);
                 }
+                state_changed = true;
             } else if (queueLen > 110 && s_current_bitrate_idx > 4) {
                 LOGW("lhdcBT_adjust_bitrate: severe queue congestion (len=%u > 110) -> emergency downscale to index 4",
                      queueLen);
@@ -243,6 +389,7 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
                 if (fn_lhdcv5BT_set_bitrate) {
                     fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, 4);
                 }
+                state_changed = true;
             }
             s_clean_queue_count = 0;
         }
@@ -251,28 +398,9 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
         if (queueLen <= 50) {
             s_clean_queue_count++;
 
-            // Property polling every 20 clean frames (~100ms)
-            if (s_clean_queue_count % 20 == 0) {
-                uint32_t new_target = map_v3_to_v5_bitrate(0);
-                if (new_target != s_last_configured_target) {
-                    LOGI("lhdcBT_adjust_bitrate: target bitrate changed: %u -> %u", s_last_configured_target, new_target);
-                    s_last_configured_target = new_target;
-                    s_target_high_bitrate = new_target;
-                    s_current_bitrate_idx = new_target;
-                    if (fn_lhdcv5BT_set_max_bitrate) {
-                        fn_lhdcv5BT_set_max_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
-                    }
-                    if (fn_lhdcv5BT_set_bitrate) {
-                        fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, new_target);
-                    }
-                    s_clean_queue_count = 0;
-                    return 0;
-                }
-            }
-
             // ABR step-up recovery:
             // When link stays healthy for 300 frames (~1.5s), restore target bitrate
-            if (abr_enabled && s_current_bitrate_idx < s_target_high_bitrate && s_clean_queue_count >= 300) {
+            if (s_abr_enabled && s_current_bitrate_idx < s_target_high_bitrate && s_clean_queue_count >= 300) {
                 LOGI("lhdcBT_adjust_bitrate: queue clean for %u frames -> ABR restoring to target index %u",
                      s_clean_queue_count, s_target_high_bitrate);
                 s_current_bitrate_idx = s_target_high_bitrate;
@@ -280,8 +408,13 @@ int32_t lhdcBT_adjust_bitrate(HANDLE_LHDC_BT handle, uint32_t queueLen) {
                     fn_lhdcv5BT_set_bitrate((HANDLE_LHDCV5_BT)handle, s_target_high_bitrate);
                 }
                 s_clean_queue_count = 0;
+                state_changed = true;
             }
         }
+    }
+
+    if (state_changed || (s_poll_ticks % 200) == 0) {
+        publish_live_state((HANDLE_LHDCV5_BT)handle, true, queueLen, s_abr_enabled, state_changed);
     }
     return 0;
 }
@@ -337,10 +470,10 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
         if (custom_mtu >= 300 && custom_mtu <= 1000) {
             g_mtu = (uint32_t)custom_mtu;
         } else {
-            g_mtu = (v5_br == 8) ? 660 : 600;
+            g_mtu = 660;
         }
     } else {
-        g_mtu = (v5_br == 8) ? 660 : 600;
+        g_mtu = 660;
     }
 
     // Physical constraint safety guard:
@@ -373,6 +506,8 @@ int32_t lhdcBT_init_encoder(HANDLE_LHDC_BT handle, uint32_t sample_rate, uint32_
     uint32_t bytes_per_sample = (bits_per_sample / 8) * 2;
     g_bytes_per_frame = g_block_size * bytes_per_sample;
     LOGI("init_encoder config: block_size=%u, bytes_per_frame=%u", g_block_size, g_bytes_per_frame);
+    s_poll_ticks = 0;
+    publish_live_state((HANDLE_LHDCV5_BT)handle, true, 0, read_abr_enabled(), true);
 
     return ret;
 }
@@ -444,6 +579,13 @@ int lhdcBT_encodeV3(HANDLE_LHDC_BT handle, void* p_pcm, unsigned char* out_put, 
         return 0;
     }
 
+    static uint32_t s_encode_count = 0;
+    s_encode_count++;
+    if (s_encode_count == 1 || (s_encode_count % 20) == 0) {
+        sync_target_and_abr((HANDLE_LHDCV5_BT)handle, s_last_queue_len);
+    }
+    publish_live_state((HANDLE_LHDCV5_BT)handle, true, s_last_queue_len, s_abr_enabled, false);
+
     uint32_t pcm_bytes = g_bytes_per_frame;
     uint32_t out_buf_size = 1024;
 
@@ -455,8 +597,6 @@ int lhdcBT_encodeV3(HANDLE_LHDC_BT handle, void* p_pcm, unsigned char* out_put, 
         return 0;
     }
 
-    static uint32_t s_encode_count = 0;
-    s_encode_count++;
     if (s_encode_count % 100 == 1) {
         LOGI("lhdcBT_encodeV3: frame #%u encoded, written=%u bytes, out_frames=%u (br_idx=%u)",
              s_encode_count, *written, *out_frames, s_current_bitrate_idx);
